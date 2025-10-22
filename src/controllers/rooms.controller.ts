@@ -16,7 +16,8 @@ interface Room {
  */
 export const getAllRooms = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query<Room[]>('SELECT * FROM rooms');
+    const [rows] = await pool.query<any[]>('SELECT * FROM rooms');
+    const rooms: Room[] = rows as Room[];
     res.json(rows);
   } catch (error) {
     console.error('Error fetching rooms:', error);

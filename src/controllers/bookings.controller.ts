@@ -18,7 +18,8 @@ interface Booking {
  */
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query<Booking[]>('SELECT * FROM bookings');
+    const [rows] = await pool.query<any[]>('SELECT * FROM bookings');
+    const bookings: Booking[] = rows as Booking[];
     res.json(rows);
   } catch (error) {
     console.error('Error fetching bookings:', error);
