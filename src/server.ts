@@ -9,12 +9,19 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configure CORS
-app.use(cors({
-  origin: 'http://localhost:4200', // Allow requests from Angular frontend
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// --- START OF FIX ---
+
+// Define CORS options
+const corsOptions = {
+  origin: 'http://localhost:4200', // Allow only the Angular app to connect
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+
+// Use CORS middleware with the specified options
+// THIS MUST BE PLACED BEFORE YOUR ROUTES
+app.use(cors(corsOptions));
+
+// --- END OF FIX ---
 
 // Middleware for parsing JSON request bodies
 app.use(express.json());

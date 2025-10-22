@@ -10,6 +10,17 @@ interface Room {
   location?: string | null;
   amenities?: string[] | null;
   icon?: string | null;
+  nextAvailableTime?: Date | null;
+  remainingTimeMinutes?: number | null;
+}
+
+interface Booking {
+  id: number;
+  room_id: number;
+  name: string;
+  start_time: Date;
+  end_time: Date;
+  comment: string;
 }
 
 /**
@@ -18,17 +29,92 @@ interface Room {
  * @access Public
  */
 export const getAllRooms = async (req: Request, res: Response) => {
-  console.log('Attempting to get all rooms...');
+  console.log('Attempting to get all rooms with current and next bookings...');
   try {
-    const [rows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms');
-    const rooms: Room[] = rows.map((row: any) => ({
+    const [roomRows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms');
+    const rooms: Room[] = roomRows.map((row: any) => ({
       ...row,
       amenities: row.amenities ? JSON.parse(row.amenities) : null,
     }));
-    console.log('Successfully fetched rooms:', rooms.length, 'rooms found.');
-    res.json(rooms);
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
+    // Fetch all bookings that are relevant for today
+    const [bookingRows] = await pool.query<any[]>(
+      'SELECT id, room_id, name, start_time, end_time, comment FROM bookings WHERE start_time <= ? AND end_time >= ? ORDER BY start_time ASC',
+      [todayEnd, todayStart]
+    );
+    const allBookings: Booking[] = bookingRows.map((row: any) => ({
+      ...row,
+      start_time: new Date(row.start_time),
+      end_time: new Date(row.end_time),
+    }));
+
+    const roomsWithBookingInfo = rooms.map(room => {
+      const roomBookings = allBookings.filter(booking => booking.room_id === room.id);
+
+      let currentBooking: Booking | undefined = undefined;
+      let nextBooking: Booking | undefined = undefined;
+
+      // Find current booking
+      currentBooking = roomBookings.find(booking =>
+        booking.start_time <= now && booking.end_time >= now
+      );
+
+      // Find next booking for today
+      const futureBookingsToday = roomBookings.filter(booking =>
+        booking.start_time > now && booking.start_time <= todayEnd
+      ).sort((a, b) => a.start_time.getTime() - b.start_time.getTime()); // Sort by start time
+
+      if (futureBookingsToday.length > 0) {
+        nextBooking = futureBookingsToday[0];
+      }
+
+      return {
+        ...room,
+        currentBooking: currentBooking,
+        nextBooking: nextBooking,
+      };
+    });
+
+    console.log('Successfully fetched rooms with current and next booking info:', roomsWithBookingInfo.length, 'rooms found.');
+    res.json(roomsWithBookingInfo);
   } catch (error) {
-    console.error('Error fetching rooms:', error);
+    console.error('Error fetching rooms with booking info:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+/**
+ * @route GET /api/rooms/:id
+ * @desc Get a single room by ID
+ * @access Public
+ */
+export const getRoomById = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  console.log(`Attempting to get room with ID: ${id}`);
+  try {
+    const [rows] = await pool.query<any[]>(
+      'SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms WHERE id = ?',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      console.warn(`Room with ID: ${id} not found.`);
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const room: Room = {
+      ...rows[0],
+      amenities: rows[0].amenities ? JSON.parse(rows[0].amenities) : null,
+    };
+
+    console.log(`Successfully fetched room with ID: ${id}`);
+    res.json(room);
+  } catch (error) {
+    console.error(`Error fetching room with ID: ${id}:`, error);
     res.status(500).json({ message: 'Server Error' });
   }
 };

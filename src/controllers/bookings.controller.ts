@@ -28,6 +28,43 @@ export const getAllBookings = async (req: Request, res: Response) => {
 };
 
 /**
+ * @route GET /api/bookings/room/:roomId
+ * @desc Get all bookings for a specific room (optionally filtered by date)
+ * @access Public
+ */
+export const getBookingsByRoomId = async (req: Request, res: Response) => {
+  const { roomId } = req.params;
+  const { date } = req.query;
+
+  try {
+    let query = 'SELECT * FROM bookings WHERE room_id = ?';
+    const params: any[] = [roomId];
+
+    // If date is provided, filter bookings for that specific date
+    if (date) {
+      const dateStr = date as string;
+      const startOfDay = `${dateStr} 00:00:00`;
+      const endOfDay = `${dateStr} 23:59:59`;
+      query += ' AND start_time >= ? AND start_time <= ?';
+      params.push(startOfDay, endOfDay);
+      console.log(`Fetching bookings for room ${roomId} on ${dateStr}`);
+    } else {
+      console.log(`Fetching all bookings for room ${roomId}`);
+    }
+
+    query += ' ORDER BY start_time ASC';
+
+    const [rows] = await pool.query<any[]>(query, params);
+    const bookings: Booking[] = rows as Booking[];
+    console.log(`Found ${bookings.length} bookings for room ${roomId}`);
+    res.json(bookings);
+  } catch (error) {
+    console.error(`Error fetching bookings for room ${roomId}:`, error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+/**
  * @route POST /api/bookings
  * @desc Create a new booking
  * @access Public
@@ -45,6 +82,54 @@ export const createBooking = async (req: Request, res: Response) => {
     res.status(201).json({ message: 'Booking created successfully', bookingId: result.insertId });
   } catch (error) {
     console.error('Error creating booking:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+/**
+ * @route GET /api/bookings/check-conflict/:roomId
+ * @desc Check if a time slot has a booking conflict
+ * @access Public
+ */
+export const checkBookingConflict = async (req: Request, res: Response) => {
+  const { roomId } = req.params;
+  const { date, startTime, endTime } = req.query;
+
+  console.log(`Checking conflict for room ${roomId}: ${date} ${startTime}-${endTime}`);
+
+  if (!date || !startTime || !endTime) {
+    return res.status(400).json({ message: 'Date, startTime, and endTime are required' });
+  }
+
+  try {
+    // Combine date with times to create full datetime strings
+    const requestedStart = `${date} ${startTime}:00`;
+    const requestedEnd = `${date} ${endTime}:00`;
+
+    // Query for overlapping bookings
+    // A booking overlaps if:
+    // 1. It starts before the requested end time AND
+    // 2. It ends after the requested start time
+    const [rows] = await pool.query<any[]>(
+      `SELECT id, room_id, name, start_time, end_time, comment
+       FROM bookings
+       WHERE room_id = ?
+       AND start_time < ?
+       AND end_time > ?`,
+      [roomId, requestedEnd, requestedStart]
+    );
+
+    if (rows.length > 0) {
+      console.log(`Conflict found for room ${roomId}:`, rows[0]);
+      // Return the first conflicting booking
+      res.json(rows[0]);
+    } else {
+      console.log(`No conflict found for room ${roomId}`);
+      // No conflict found
+      res.json(null);
+    }
+  } catch (error) {
+    console.error(`Error checking booking conflict for room ${roomId}:`, error);
     res.status(500).json({ message: 'Server Error' });
   }
 };
