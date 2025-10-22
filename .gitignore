@@ -1,0 +1,13 @@
+# Node.js
+node_modules/
+dist/
+
+# dotenv environment variables file
+.env
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+.vscode/
