@@ -12,6 +12,9 @@ interface Room {
   icon?: string | null;
   nextAvailableTime?: Date | null;
   remainingTimeMinutes?: number | null;
+  totalBookingsToday?: number;
+  totalBookedMinutesToday?: number;
+  allBookingsToday?: Booking[];
 }
 
 interface Booking {
@@ -38,14 +41,26 @@ export const getAllRooms = async (req: Request, res: Response) => {
     }));
 
     const now = new Date();
+    console.log('Current server time:', now.toISOString());
+
+    // Format dates for MySQL (YYYY-MM-DD HH:MM:SS)
+    const formatMySQLDateTime = (date: Date) => {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    };
+
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-    // Fetch all bookings that are relevant for today
+    console.log('Fetching bookings from', formatMySQLDateTime(todayStart), 'to', formatMySQLDateTime(todayEnd));
+
+    // Fetch all bookings that overlap with today
     const [bookingRows] = await pool.query<any[]>(
-      'SELECT id, room_id, name, start_time, end_time, comment FROM bookings WHERE start_time <= ? AND end_time >= ? ORDER BY start_time ASC',
-      [todayEnd, todayStart]
+      'SELECT id, room_id, name, start_time, end_time, comment FROM bookings WHERE DATE(start_time) = CURDATE() OR DATE(end_time) = CURDATE() ORDER BY start_time ASC'
     );
+
+    console.log(`Found ${bookingRows.length} bookings for today`);
+
     const allBookings: Booking[] = bookingRows.map((row: any) => ({
       ...row,
       start_time: new Date(row.start_time),
@@ -58,28 +73,67 @@ export const getAllRooms = async (req: Request, res: Response) => {
       let currentBooking: Booking | undefined = undefined;
       let nextBooking: Booking | undefined = undefined;
 
-      // Find current booking
-      currentBooking = roomBookings.find(booking =>
-        booking.start_time <= now && booking.end_time >= now
-      );
+      // Find current booking (ongoing right now)
+      currentBooking = roomBookings.find(booking => {
+        const isCurrentlyBooked = booking.start_time <= now && booking.end_time > now;
+        if (isCurrentlyBooked) {
+          console.log(`Room ${room.name} is currently booked:`, {
+            start: booking.start_time.toISOString(),
+            end: booking.end_time.toISOString(),
+            now: now.toISOString()
+          });
+        }
+        return isCurrentlyBooked;
+      });
 
       // Find next booking for today
-      const futureBookingsToday = roomBookings.filter(booking =>
-        booking.start_time > now && booking.start_time <= todayEnd
-      ).sort((a, b) => a.start_time.getTime() - b.start_time.getTime()); // Sort by start time
+      const futureBookingsToday = roomBookings
+        .filter(booking => booking.start_time > now)
+        .sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
 
       if (futureBookingsToday.length > 0) {
         nextBooking = futureBookingsToday[0];
+        console.log(`Room ${room.name} has next booking at:`, nextBooking.start_time.toISOString());
       }
+
+      // Calculate total bookings and booked minutes for today
+      const totalBookingsToday = roomBookings.length;
+      const totalBookedMinutesToday = roomBookings.reduce((total, booking) => {
+        // Calculate the duration of each booking in minutes
+        const durationMs = booking.end_time.getTime() - booking.start_time.getTime();
+        const durationMinutes = Math.floor(durationMs / (1000 * 60));
+        return total + durationMinutes;
+      }, 0);
+
+      console.log(`Room ${room.name}: ${totalBookingsToday} bookings, ${totalBookedMinutesToday} minutes booked today`);
+
+      // Sort all room bookings by start time for frontend block detection
+      const sortedRoomBookings = roomBookings.sort((a, b) =>
+        a.start_time.getTime() - b.start_time.getTime()
+      );
 
       return {
         ...room,
-        currentBooking: currentBooking,
-        nextBooking: nextBooking,
+        currentBooking: currentBooking || null,
+        nextBooking: nextBooking || null,
+        totalBookingsToday,
+        totalBookedMinutesToday,
+        allBookingsToday: sortedRoomBookings,
       };
     });
 
     console.log('Successfully fetched rooms with current and next booking info:', roomsWithBookingInfo.length, 'rooms found.');
+
+    // Log summary for debugging
+    roomsWithBookingInfo.forEach(room => {
+      if (room.currentBooking || room.nextBooking) {
+        console.log(`Room ${room.name}:`, {
+          currentBooking: room.currentBooking ? `${new Date(room.currentBooking.start_time).toLocaleTimeString()} - ${new Date(room.currentBooking.end_time).toLocaleTimeString()}` : 'none',
+          nextBooking: room.nextBooking ? `${new Date(room.nextBooking.start_time).toLocaleTimeString()} - ${new Date(room.nextBooking.end_time).toLocaleTimeString()}` : 'none'
+        });
+      }
+    });
+
     res.json(roomsWithBookingInfo);
   } catch (error) {
     console.error('Error fetching rooms with booking info:', error);
