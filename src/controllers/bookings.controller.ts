@@ -74,11 +74,43 @@ export const createBooking = async (req: Request, res: Response) => {
   if (!room_id || !name || !start_time || !end_time) {
     return res.status(400).json({ message: 'Please enter all required fields' });
   }
+
   try {
+    // CRITICAL: Server-side conflict check to prevent booking overwrites
+    // Check for overlapping bookings before inserting
+    // A booking overlaps if:
+    // 1. It starts before the requested end time AND
+    // 2. It ends after the requested start time
+    const [existingBookings] = await pool.query<any[]>(
+      `SELECT id, room_id, name, start_time, end_time
+       FROM bookings
+       WHERE room_id = ?
+       AND start_time < ?
+       AND end_time > ?`,
+      [room_id, end_time, start_time]
+    );
+
+    // If any overlapping booking exists, reject the request
+    if (existingBookings.length > 0) {
+      const conflict = existingBookings[0];
+      console.log(`Booking conflict detected for room ${room_id}:`, conflict);
+      return res.status(409).json({
+        message: 'Dieser Zeitraum ist bereits gebucht.',
+        conflict: {
+          name: conflict.name,
+          start_time: conflict.start_time,
+          end_time: conflict.end_time
+        }
+      });
+    }
+
+    // No conflict - proceed with insertion
     const [result] = await pool.query<any>(
       'INSERT INTO bookings (room_id, name, start_time, end_time, comment) VALUES (?, ?, ?, ?, ?)',
       [room_id, name, start_time, end_time, comment]
     );
+
+    console.log(`Booking created successfully for room ${room_id}: ${start_time} - ${end_time}`);
     res.status(201).json({ message: 'Booking created successfully', bookingId: result.insertId });
   } catch (error) {
     console.error('Error creating booking:', error);

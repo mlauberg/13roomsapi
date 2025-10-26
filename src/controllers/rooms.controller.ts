@@ -266,3 +266,63 @@ export const deleteRoom = async (req: Request, res: Response) => {
     res.status(500).json({ message: 'Server Error' });
   }
 };
+
+/**
+ * PHASE 3: Smart Failure Recovery
+ * @route GET /api/rooms/available
+ * @desc Get all rooms available for a specific time slot
+ * @access Public
+ * @query date - Date in YYYY-MM-DD format
+ * @query startTime - Start time in HH:mm format
+ * @query endTime - End time in HH:mm format
+ */
+export const getAvailableRooms = async (req: Request, res: Response) => {
+  const { date, startTime, endTime } = req.query;
+
+  console.log('[AvailableRooms] Searching for available rooms:', { date, startTime, endTime });
+
+  // Validation
+  if (!date || !startTime || !endTime) {
+    return res.status(400).json({ message: 'Missing required parameters: date, startTime, endTime' });
+  }
+
+  try {
+    // Combine date and time to create full datetime strings
+    const requestedStart = `${date} ${startTime}:00`;
+    const requestedEnd = `${date} ${endTime}:00`;
+
+    console.log('[AvailableRooms] Searching for rooms available between:', requestedStart, 'and', requestedEnd);
+
+    // Get all rooms
+    const [roomRows] = await pool.query<any[]>(
+      'SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms'
+    );
+
+    // Get all bookings that overlap with the requested time slot
+    const [conflictingBookings] = await pool.query<any[]>(
+      `SELECT room_id FROM bookings 
+       WHERE (start_time < ? AND end_time > ?)`,
+      [requestedEnd, requestedStart]
+    );
+
+    console.log('[AvailableRooms] Found', conflictingBookings.length, 'conflicting bookings');
+
+    // Extract room IDs that are occupied during the requested time
+    const occupiedRoomIds = new Set(conflictingBookings.map((booking: any) => booking.room_id));
+
+    // Filter out occupied rooms
+    const availableRooms: Room[] = roomRows
+      .filter((row: any) => !occupiedRoomIds.has(row.id))
+      .map((row: any) => ({
+        ...row,
+        amenities: row.amenities ? JSON.parse(row.amenities) : null,
+      }));
+
+    console.log('[AvailableRooms] Found', availableRooms.length, 'available rooms');
+
+    res.json(availableRooms);
+  } catch (error) {
+    console.error('[AvailableRooms] Error searching for available rooms:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
