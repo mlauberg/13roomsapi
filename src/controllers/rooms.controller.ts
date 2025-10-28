@@ -34,7 +34,7 @@ interface Booking {
 export const getAllRooms = async (req: Request, res: Response) => {
   console.log('Attempting to get all rooms with current and next bookings...');
   try {
-    const [roomRows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms');
+    const [roomRows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM room');
     const rooms: Room[] = roomRows.map((row: any) => ({
       ...row,
       amenities: row.amenities ? JSON.parse(row.amenities) : null,
@@ -56,7 +56,7 @@ export const getAllRooms = async (req: Request, res: Response) => {
 
     // Fetch all bookings that overlap with today
     const [bookingRows] = await pool.query<any[]>(
-      'SELECT id, room_id, name, start_time, end_time, comment FROM bookings WHERE DATE(start_time) = CURDATE() OR DATE(end_time) = CURDATE() ORDER BY start_time ASC'
+      'SELECT id, room_id, name, start_time, end_time, comment FROM booking WHERE DATE(start_time) = CURDATE() OR DATE(end_time) = CURDATE() ORDER BY start_time ASC'
     );
 
     console.log(`Found ${bookingRows.length} bookings for today`);
@@ -151,7 +151,7 @@ export const getRoomById = async (req: Request, res: Response) => {
   console.log(`Attempting to get room with ID: ${id}`);
   try {
     const [rows] = await pool.query<any[]>(
-      'SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms WHERE id = ?',
+      'SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM room WHERE id = ?',
       [id]
     );
 
@@ -190,7 +190,7 @@ export const createRoom = async (req: Request, res: Response) => {
     const amenitiesJson = amenities ? JSON.stringify(amenities) : null;
     console.log('Amenities after stringify (createRoom):', amenitiesJson);
     const [result] = await pool.query<any>(
-      'INSERT INTO rooms (name, capacity, status, location, amenities, icon) VALUES (?, ?, ?, ?, CAST(? AS JSON), ?)',
+      'INSERT INTO room (name, capacity, status, location, amenities, icon) VALUES (?, ?, ?, ?, CAST(? AS JSON), ?)',
       [name, capacity, status, location, amenitiesJson, icon]
     );
     console.log('Room created successfully with ID:', result.insertId);
@@ -230,7 +230,7 @@ export const updateRoom = async (req: Request, res: Response) => {
 
   try {
     const [result] = await pool.query<any>(
-      `UPDATE rooms SET ${fieldsToUpdate.join(', ')} WHERE id = ?`,
+      `UPDATE room SET ${fieldsToUpdate.join(', ')} WHERE id = ?`,
       values
     );
     if (result.affectedRows === 0) {
@@ -254,7 +254,7 @@ export const deleteRoom = async (req: Request, res: Response) => {
   const { id } = req.params;
   console.log('Attempting to delete room ID:', id);
   try {
-    const [result] = await pool.query<any>('DELETE FROM rooms WHERE id = ?', [id]);
+    const [result] = await pool.query<any>('DELETE FROM room WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       console.warn('Room not found for deletion with ID:', id);
       return res.status(404).json({ message: 'Room not found' });
@@ -295,12 +295,12 @@ export const getAvailableRooms = async (req: Request, res: Response) => {
 
     // Get all rooms
     const [roomRows] = await pool.query<any[]>(
-      'SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM rooms'
+      'SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM room'
     );
 
     // Get all bookings that overlap with the requested time slot
     const [conflictingBookings] = await pool.query<any[]>(
-      `SELECT room_id FROM bookings 
+      `SELECT room_id FROM booking
        WHERE (start_time < ? AND end_time > ?)`,
       [requestedEnd, requestedStart]
     );

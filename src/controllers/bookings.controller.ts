@@ -18,7 +18,7 @@ interface Booking {
  */
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query<any[]>('SELECT * FROM bookings');
+    const [rows] = await pool.query<any[]>('SELECT * FROM booking');
     const bookings: Booking[] = rows as Booking[];
     res.json(rows);
   } catch (error) {
@@ -37,7 +37,7 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
   const { date } = req.query;
 
   try {
-    let query = 'SELECT * FROM bookings WHERE room_id = ?';
+    let query = 'SELECT * FROM booking WHERE room_id = ?';
     const params: any[] = [roomId];
 
     // If date is provided, filter bookings for that specific date
@@ -83,7 +83,7 @@ export const createBooking = async (req: Request, res: Response) => {
     // 2. It ends after the requested start time
     const [existingBookings] = await pool.query<any[]>(
       `SELECT id, room_id, name, start_time, end_time
-       FROM bookings
+       FROM booking
        WHERE room_id = ?
        AND start_time < ?
        AND end_time > ?`,
@@ -106,7 +106,7 @@ export const createBooking = async (req: Request, res: Response) => {
 
     // No conflict - proceed with insertion
     const [result] = await pool.query<any>(
-      'INSERT INTO bookings (room_id, name, start_time, end_time, comment) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO booking (room_id, name, start_time, end_time, comment) VALUES (?, ?, ?, ?, ?)',
       [room_id, name, start_time, end_time, comment]
     );
 
@@ -144,7 +144,7 @@ export const checkBookingConflict = async (req: Request, res: Response) => {
     // 2. It ends after the requested start time
     const [rows] = await pool.query<any[]>(
       `SELECT id, room_id, name, start_time, end_time, comment
-       FROM bookings
+       FROM booking
        WHERE room_id = ?
        AND start_time < ?
        AND end_time > ?`,
@@ -174,7 +174,7 @@ export const checkBookingConflict = async (req: Request, res: Response) => {
 export const deleteBooking = async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    const [result] = await pool.query<any>('DELETE FROM bookings WHERE id = ?', [id]);
+    const [result] = await pool.query<any>('DELETE FROM booking WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Booking not found' });
     }
