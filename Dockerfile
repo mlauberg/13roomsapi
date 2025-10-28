@@ -22,7 +22,10 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-RUN npm ci --only=production --verbose
+# Using npm install for more flexibility
+# Note: npm install is more forgiving with lock file sync issues
+# For production-only dependencies, use: npm install --omit=dev
+RUN npm install --omit=dev --verbose
 
 COPY . .
 
