@@ -1,0 +1,89 @@
+services:
+  # MySQL Database Service
+  database:
+    image: mysql:8.0
+    container_name: 13rooms-api-database
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-your_mysql_password}
+      MYSQL_DATABASE: 13rooms
+      MYSQL_USER: 13rooms_user
+      MYSQL_PASSWORD: ${DB_PASSWORD:-your_mysql_password}
+    volumes:
+      # Persist database data
+      - mysql_data:/var/lib/mysql
+      # Auto-initialize database schema
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${DB_PASSWORD:-your_mysql_password}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - 13rooms-api-network
+
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: 13rooms-api-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount local code for live reload
+      - .:/app
+      # Prevent node_modules from being overridden
+      - /app/node_modules
+      # Prevent the compiled dist folder from being overridden by the local mount
+      - /app/dist
+    environment:
+      # Database connection settings - use service name for container networking
+      DB_HOST: database
+      DB_USER: ${DB_USER:-13rooms_user}
+      DB_PASSWORD: ${DB_PASSWORD:-your_mysql_password}
+      DB_NAME: 13rooms
+      NODE_ENV: development
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3000/api/rooms",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - 13rooms-api-network
+
+volumes:
+  # Persistent volume for MySQL data
+  mysql_data:
+    driver: local
+
+networks:
+  13rooms-api-network:
+    driver: bridge
