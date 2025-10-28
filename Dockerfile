@@ -10,13 +10,11 @@ RUN npm install --verbose
 
 COPY . .
 
-# Compile TypeScript to JavaScript
-RUN npm run build
-
 EXPOSE 3000
 
-# Run the compiled JavaScript from dist folder
-CMD ["node", "dist/server.js"]
+# Use ts-node-dev for development with live-reload
+# This works with volume mounts and compiles TypeScript in-memory
+CMD ["npm", "start"]
 
 FROM node:20-alpine AS production
 
