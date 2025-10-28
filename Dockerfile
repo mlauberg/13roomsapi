@@ -10,9 +10,13 @@ RUN npm install --verbose
 
 COPY . .
 
+# Compile TypeScript to JavaScript
+RUN npm run build
+
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Run the compiled JavaScript from dist folder
+CMD ["node", "dist/server.js"]
 
 FROM node:20-alpine AS production
 
@@ -22,13 +26,18 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-# Using npm install for more flexibility
-# Note: npm install is more forgiving with lock file sync issues
-# For production-only dependencies, use: npm install --omit=dev
-RUN npm install --omit=dev --verbose
+# Install ALL dependencies first (including devDependencies for TypeScript compiler)
+RUN npm install --verbose
 
 COPY . .
 
+# Compile TypeScript to JavaScript
+RUN npm run build
+
+# Remove devDependencies after build to reduce image size
+RUN npm prune --omit=dev
+
 EXPOSE 3000
 
-CMD ["node", "src/server.js"]
+# Run the compiled JavaScript from dist folder
+CMD ["node", "dist/server.js"]
