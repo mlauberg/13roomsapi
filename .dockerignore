@@ -1,0 +1,57 @@
+# Node modules
+node_modules
+npm-debug.log
+
+# Environment files (should be passed via docker-compose environment)
+.env
+.env.*
+
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Test files
+test/
+tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+coverage/
+.nyc_output/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Docker files (no need to copy these into the image)
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# Build artifacts
+dist/
+build/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
