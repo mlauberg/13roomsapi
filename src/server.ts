@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import roomRoutes from './routes/rooms.routes';
 import bookingRoutes from './routes/bookings.routes';
+import authRoutes from './routes/auth.routes';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
 

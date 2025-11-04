@@ -2,11 +2,13 @@ import { Request, Response } from 'express';
 import pool from '../models/db';
 
 // Interface for Room data
+type RoomStatus = 'active' | 'maintenance' | 'inactive';
+
 interface Room {
   id: number;
   name: string;
   capacity: number;
-  status: string;
+  status: RoomStatus;
   location?: string | null;
   amenities?: string[] | null;
   icon?: string | null;
@@ -20,11 +22,27 @@ interface Room {
 interface Booking {
   id: number;
   room_id: number;
-  name: string;
+  title: string;
   start_time: Date;
   end_time: Date;
-  comment: string;
+  comment: string | null;
 }
+
+const normalizeRoomStatus = (status?: string | null): RoomStatus => {
+  const normalized = status?.toLowerCase();
+  switch (normalized) {
+    case 'active':
+    case 'available':
+      return 'active';
+    case 'maintenance':
+      return 'maintenance';
+    case 'inactive':
+    case 'occupied':
+      return 'inactive';
+    default:
+      return 'active';
+  }
+};
 
 /**
  * @route GET /api/rooms
@@ -37,6 +55,7 @@ export const getAllRooms = async (req: Request, res: Response) => {
     const [roomRows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM room');
     const rooms: Room[] = roomRows.map((row: any) => ({
       ...row,
+      status: normalizeRoomStatus(row.status),
       amenities: row.amenities ? JSON.parse(row.amenities) : null,
     }));
 
@@ -56,15 +75,21 @@ export const getAllRooms = async (req: Request, res: Response) => {
 
     // Fetch all bookings that overlap with today
     const [bookingRows] = await pool.query<any[]>(
-      'SELECT id, room_id, name, start_time, end_time, comment FROM booking WHERE DATE(start_time) = CURDATE() OR DATE(end_time) = CURDATE() ORDER BY start_time ASC'
+      `SELECT id, room_id, name AS title, start_time, end_time, comment
+       FROM booking
+       WHERE (DATE(start_time) = CURDATE() OR DATE(end_time) = CURDATE())
+       AND status = 'confirmed'
+       ORDER BY start_time ASC`
     );
 
     console.log(`Found ${bookingRows.length} bookings for today`);
 
     const allBookings: Booking[] = bookingRows.map((row: any) => ({
       ...row,
+      title: row.title ?? row.name,
       start_time: new Date(row.start_time),
       end_time: new Date(row.end_time),
+      comment: row.comment ?? null,
     }));
 
     const roomsWithBookingInfo = rooms.map(room => {
@@ -162,6 +187,7 @@ export const getRoomById = async (req: Request, res: Response) => {
 
     const room: Room = {
       ...rows[0],
+      status: normalizeRoomStatus(rows[0].status),
       amenities: rows[0].amenities ? JSON.parse(rows[0].amenities) : null,
     };
 
@@ -182,16 +208,19 @@ export const createRoom = async (req: Request, res: Response) => {
   const { name, capacity, status, location, amenities, icon } = req.body;
   console.log('Attempting to create room with data:', { name, capacity, status, location, amenities, icon });
   console.log('Type of amenities before stringify (createRoom):', typeof amenities, amenities);
-  if (!name || !capacity || !status) {
+  if (!name || !capacity) {
     console.warn('Missing required fields for room creation.');
-    return res.status(400).json({ message: 'Please enter all required fields (name, capacity, status)' });
+    return res.status(400).json({ message: 'Please enter all required fields (name, capacity)' });
   }
+
+  const normalizedStatus = normalizeRoomStatus(status);
+
   try {
     const amenitiesJson = amenities ? JSON.stringify(amenities) : null;
     console.log('Amenities after stringify (createRoom):', amenitiesJson);
     const [result] = await pool.query<any>(
       'INSERT INTO room (name, capacity, status, location, amenities, icon) VALUES (?, ?, ?, ?, CAST(? AS JSON), ?)',
-      [name, capacity, status, location, amenitiesJson, icon]
+      [name, capacity, normalizedStatus, location, amenitiesJson, icon]
     );
     console.log('Room created successfully with ID:', result.insertId);
     res.status(201).json({ message: 'Room created successfully', roomId: result.insertId });
@@ -208,25 +237,72 @@ export const createRoom = async (req: Request, res: Response) => {
  */
 export const updateRoom = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, capacity, status, location, amenities, icon } = req.body;
+  const { name, capacity, status, location, amenities, icon } = req.body ?? {};
   console.log('Attempting to update room ID:', id, 'with data:', { name, capacity, status, location, amenities, icon });
-  console.log('Type of amenities before stringify (updateRoom):', typeof amenities, amenities);
+
+  if (!id) {
+    return res.status(400).json({ message: 'Room ID is required' });
+  }
 
   const fieldsToUpdate: string[] = [];
   const values: any[] = [];
 
-  if (name !== undefined) { fieldsToUpdate.push('name = ?'); values.push(name); }
-  if (capacity !== undefined) { fieldsToUpdate.push('capacity = ?'); values.push(capacity); }
-  if (status !== undefined) { fieldsToUpdate.push('status = ?'); values.push(status); }
-  if (location !== undefined) { fieldsToUpdate.push('location = ?'); values.push(location); }
-  if (amenities !== undefined) { fieldsToUpdate.push('amenities = CAST(? AS JSON)'); values.push(JSON.stringify(amenities)); }
-  if (icon !== undefined) { fieldsToUpdate.push('icon = ?'); values.push(icon); }
+  if (name !== undefined) {
+    const trimmedName = typeof name === 'string' ? name.trim() : name;
+    fieldsToUpdate.push('name = ?');
+    values.push(trimmedName);
+  }
+
+  if (capacity !== undefined) {
+    const numericCapacity = Number(capacity);
+    if (!Number.isFinite(numericCapacity) || numericCapacity < 1) {
+      return res.status(400).json({ message: 'Capacity must be a positive number' });
+    }
+    fieldsToUpdate.push('capacity = ?');
+    values.push(numericCapacity);
+  }
+
+  if (status !== undefined) {
+    const normalizedStatus = normalizeRoomStatus(status);
+    fieldsToUpdate.push('status = ?');
+    values.push(normalizedStatus);
+  }
+
+  if (location !== undefined) {
+    const sanitizedLocation = typeof location === 'string' ? location.trim() : null;
+    fieldsToUpdate.push('location = ?');
+    values.push(sanitizedLocation || null);
+  }
+
+  if (amenities !== undefined) {
+    let amenitiesJson: string | null = null;
+    if (Array.isArray(amenities)) {
+      amenitiesJson = JSON.stringify(amenities);
+    } else if (typeof amenities === 'string') {
+      try {
+        const parsed = JSON.parse(amenities);
+        if (Array.isArray(parsed)) {
+          amenitiesJson = JSON.stringify(parsed);
+        }
+      } catch (error) {
+        console.warn('Failed to parse amenities JSON string, storing null', error);
+      }
+    }
+    fieldsToUpdate.push('amenities = ?');
+    values.push(amenitiesJson);
+  }
+
+  if (icon !== undefined) {
+    const sanitizedIcon = typeof icon === 'string' && icon.trim().length > 0 ? icon.trim() : null;
+    fieldsToUpdate.push('icon = ?');
+    values.push(sanitizedIcon);
+  }
 
   if (fieldsToUpdate.length === 0) {
     return res.status(400).json({ message: 'No fields provided for update' });
   }
 
-  values.push(id);
+  values.push(Number(id));
 
   try {
     const [result] = await pool.query<any>(
@@ -237,8 +313,24 @@ export const updateRoom = async (req: Request, res: Response) => {
       console.warn('Room not found for update with ID:', id);
       return res.status(404).json({ message: 'Room not found' });
     }
+
+    const [rows] = await pool.query<any[]>(
+      'SELECT id, name, capacity, status, location, amenities, icon FROM room WHERE id = ?',
+      [Number(id)]
+    );
+
+    const updatedRoom = rows[0] ?? null;
+
+    if (updatedRoom && updatedRoom.amenities) {
+      try {
+        updatedRoom.amenities = JSON.parse(updatedRoom.amenities);
+      } catch (error) {
+        console.warn('Failed to parse stored amenities JSON for room', updatedRoom.amenities);
+      }
+    }
+
     console.log('Room updated successfully for ID:', id);
-    res.json({ message: 'Room updated successfully' });
+    res.json({ message: 'Room updated successfully', room: updatedRoom });
   } catch (error) {
     console.error('Error updating room:', error);
     res.status(500).json({ message: 'Server Error' });
@@ -301,7 +393,8 @@ export const getAvailableRooms = async (req: Request, res: Response) => {
     // Get all bookings that overlap with the requested time slot
     const [conflictingBookings] = await pool.query<any[]>(
       `SELECT room_id FROM booking
-       WHERE (start_time < ? AND end_time > ?)`,
+       WHERE (start_time < ? AND end_time > ?)
+       AND status = 'confirmed'`,
       [requestedEnd, requestedStart]
     );
 
@@ -315,8 +408,10 @@ export const getAvailableRooms = async (req: Request, res: Response) => {
       .filter((row: any) => !occupiedRoomIds.has(row.id))
       .map((row: any) => ({
         ...row,
+        status: normalizeRoomStatus(row.status),
         amenities: row.amenities ? JSON.parse(row.amenities) : null,
-      }));
+      }))
+      .filter(room => room.status === 'active');
 
     console.log('[AvailableRooms] Found', availableRooms.length, 'available rooms');
 

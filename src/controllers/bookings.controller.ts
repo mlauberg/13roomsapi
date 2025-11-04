@@ -1,14 +1,20 @@
 import { Request, Response } from 'express';
 import pool from '../models/db';
+import { AuthenticatedRequest } from '../middleware/auth.middleware';
 
 // Interface for Booking data
 interface Booking {
   id: number;
   room_id: number;
-  name: string;
+  title: string;
   start_time: Date;
   end_time: Date;
-  comment: string;
+  comment: string | null;
+  created_by: number;
+  status: 'confirmed' | 'canceled';
+  canceled_by: number | null;
+  canceled_reason: string | null;
+  canceled_at: Date | null;
 }
 
 /**
@@ -18,9 +24,30 @@ interface Booking {
  */
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query<any[]>('SELECT * FROM booking');
-    const bookings: Booking[] = rows as Booking[];
-    res.json(rows);
+    const [rows] = await pool.query<any[]>(
+      `SELECT
+         id,
+         room_id,
+         name AS title,
+         start_time,
+         end_time,
+         comment,
+         created_by,
+         status,
+         canceled_by,
+         canceled_reason,
+         canceled_at
+       FROM booking`
+    );
+    const bookings: Booking[] = rows.map((row: any) => ({
+      ...row,
+      title: row.title ?? row.name,
+      start_time: new Date(row.start_time),
+      end_time: new Date(row.end_time),
+      comment: row.comment ?? null,
+      canceled_at: row.canceled_at ? new Date(row.canceled_at) : null,
+    }));
+    res.json(bookings);
   } catch (error) {
     console.error('Error fetching bookings:', error);
     res.status(500).json({ message: 'Server Error' });
@@ -37,7 +64,21 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
   const { date } = req.query;
 
   try {
-    let query = 'SELECT * FROM booking WHERE room_id = ?';
+    let query = `SELECT
+                   id,
+                   room_id,
+                   name AS title,
+                   start_time,
+                   end_time,
+                   comment,
+                   created_by,
+                   status,
+                   canceled_by,
+                   canceled_reason,
+                   canceled_at
+                 FROM booking
+                 WHERE room_id = ?
+                 AND status = 'confirmed'`;
     const params: any[] = [roomId];
 
     // If date is provided, filter bookings for that specific date
@@ -55,7 +96,14 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
     query += ' ORDER BY start_time ASC';
 
     const [rows] = await pool.query<any[]>(query, params);
-    const bookings: Booking[] = rows as Booking[];
+    const bookings: Booking[] = rows.map((row: any) => ({
+      ...row,
+      title: row.title ?? row.name,
+      start_time: new Date(row.start_time),
+      end_time: new Date(row.end_time),
+      comment: row.comment ?? null,
+      canceled_at: row.canceled_at ? new Date(row.canceled_at) : null,
+    }));
     console.log(`Found ${bookings.length} bookings for room ${roomId}`);
     res.json(bookings);
   } catch (error) {
@@ -69,24 +117,68 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
  * @desc Create a new booking
  * @access Public
  */
-export const createBooking = async (req: Request, res: Response) => {
-  const { room_id, name, start_time, end_time, comment } = req.body;
-  if (!room_id || !name || !start_time || !end_time) {
-    return res.status(400).json({ message: 'Please enter all required fields' });
+export const createBooking = async (req: AuthenticatedRequest, res: Response) => {
+  const {
+    room_id,
+    title,
+    name,
+    start_time,
+    end_time,
+    comment,
+  } = req.body ?? {};
+
+  const createdBy = req.user?.id;
+
+  if (!createdBy) {
+    return res.status(401).json({ message: 'Authentication required' });
   }
 
+  const bookingTitle: string =
+    typeof title === 'string' && title.trim().length > 0
+      ? title.trim()
+      : typeof name === 'string' && name.trim().length > 0
+        ? name.trim()
+        : '';
+
+  if (!room_id || !bookingTitle || !start_time || !end_time) {
+    return res.status(400).json({ message: 'Please enter all required fields (room_id, title, start_time, end_time)' });
+  }
+
+  const status: 'confirmed' | 'canceled' = 'confirmed';
+  const canceled_by = null;
+  const canceled_reason = null;
+  const canceled_at = null;
+
   try {
+    // Validate room status before proceeding
+    const [roomStatusRows] = await pool.query<any[]>(
+      'SELECT status FROM room WHERE id = ?',
+      [room_id]
+    );
+
+    if (!Array.isArray(roomStatusRows) || roomStatusRows.length === 0) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const roomStatus = (roomStatusRows[0]?.status ?? '').toString().toLowerCase();
+    if (roomStatus === 'inactive' || roomStatus === 'maintenance') {
+      return res.status(400).json({
+        message: 'Für inaktive oder gewartete Räume können keine Buchungen erstellt werden.'
+      });
+    }
+
     // CRITICAL: Server-side conflict check to prevent booking overwrites
     // Check for overlapping bookings before inserting
     // A booking overlaps if:
     // 1. It starts before the requested end time AND
     // 2. It ends after the requested start time
     const [existingBookings] = await pool.query<any[]>(
-      `SELECT id, room_id, name, start_time, end_time
+      `SELECT id, room_id, name AS title, start_time, end_time
        FROM booking
        WHERE room_id = ?
        AND start_time < ?
-       AND end_time > ?`,
+       AND end_time > ?
+       AND status = 'confirmed'`,
       [room_id, end_time, start_time]
     );
 
@@ -97,7 +189,8 @@ export const createBooking = async (req: Request, res: Response) => {
       return res.status(409).json({
         message: 'Dieser Zeitraum ist bereits gebucht.',
         conflict: {
-          name: conflict.name,
+          title: conflict.title ?? conflict.name,
+          name: conflict.title ?? conflict.name,
           start_time: conflict.start_time,
           end_time: conflict.end_time
         }
@@ -106,8 +199,30 @@ export const createBooking = async (req: Request, res: Response) => {
 
     // No conflict - proceed with insertion
     const [result] = await pool.query<any>(
-      'INSERT INTO booking (room_id, name, start_time, end_time, comment) VALUES (?, ?, ?, ?, ?)',
-      [room_id, name, start_time, end_time, comment]
+      `INSERT INTO booking (
+        room_id,
+        name,
+        start_time,
+        end_time,
+        comment,
+        created_by,
+        status,
+        canceled_by,
+        canceled_reason,
+        canceled_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        room_id,
+        bookingTitle,
+        start_time,
+        end_time,
+        comment ?? null,
+        createdBy,
+        status,
+        canceled_by ?? null,
+        canceled_reason ?? null,
+        canceled_at ?? null,
+      ]
     );
 
     console.log(`Booking created successfully for room ${room_id}: ${start_time} - ${end_time}`);
@@ -143,18 +258,25 @@ export const checkBookingConflict = async (req: Request, res: Response) => {
     // 1. It starts before the requested end time AND
     // 2. It ends after the requested start time
     const [rows] = await pool.query<any[]>(
-      `SELECT id, room_id, name, start_time, end_time, comment
+      `SELECT id, room_id, name AS title, start_time, end_time, comment
        FROM booking
        WHERE room_id = ?
        AND start_time < ?
-       AND end_time > ?`,
+       AND end_time > ?
+       AND status = 'confirmed'`,
       [roomId, requestedEnd, requestedStart]
     );
 
     if (rows.length > 0) {
-      console.log(`Conflict found for room ${roomId}:`, rows[0]);
+      const conflict = rows[0];
+      console.log(`Conflict found for room ${roomId}:`, conflict);
       // Return the first conflicting booking
-      res.json(rows[0]);
+      const normalizedTitle = conflict.title ?? conflict.name;
+      res.json({
+        ...conflict,
+        title: normalizedTitle,
+        name: normalizedTitle
+      });
     } else {
       console.log(`No conflict found for room ${roomId}`);
       // No conflict found
