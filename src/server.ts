@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { dbReady } from './models/db';
 import roomRoutes from './routes/rooms.routes';
 import bookingRoutes from './routes/bookings.routes';
 import authRoutes from './routes/auth.routes';
@@ -37,7 +38,14 @@ app.get('/', (req, res) => {
   res.send('13Rooms API is running!');
 });
 
-// Start the server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Wait for database initialization before starting the server
+dbReady
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize database:', error);
+    process.exit(1);
+  });
