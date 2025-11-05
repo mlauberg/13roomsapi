@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import pool from '../models/db';
 
 // Interface for Room data
-type RoomStatus = 'active' | 'maintenance' | 'inactive';
+type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
 
 interface Room {
   id: number;
@@ -92,6 +92,17 @@ export const getAllRooms = async (req: Request, res: Response) => {
       comment: row.comment ?? null,
     }));
 
+    // BUSINESS HOURS LOGIC
+    // Define business hours: 08:00 to 20:00
+    const currentHour = now.getHours();
+    const isOutsideBusinessHours = currentHour < 8 || currentHour >= 20;
+
+    console.log('Business hours check:', {
+      currentHour,
+      isOutsideBusinessHours,
+      time: now.toISOString()
+    });
+
     const roomsWithBookingInfo = rooms.map(room => {
       const roomBookings = allBookings.filter(booking => booking.room_id === room.id);
 
@@ -137,8 +148,17 @@ export const getAllRooms = async (req: Request, res: Response) => {
         a.start_time.getTime() - b.start_time.getTime()
       );
 
+      // APPLY BUSINESS HOURS OVERRIDE
+      let finalStatus = room.status;
+      if (isOutsideBusinessHours) {
+        // Override status to 'night_rest' if outside business hours
+        finalStatus = 'night_rest';
+        console.log(`Room ${room.name}: Status overridden to 'night_rest' (outside business hours)`);
+      }
+
       return {
         ...room,
+        status: finalStatus,
         currentBooking: currentBooking || null,
         nextBooking: nextBooking || null,
         totalBookingsToday,
