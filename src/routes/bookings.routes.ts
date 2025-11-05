@@ -6,10 +6,10 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get('/', getAllBookings);
+router.get('/', requireAdmin, getAllBookings);
 router.get('/check-conflict/:roomId', checkBookingConflict);
 router.get('/room/:roomId', getBookingsByRoomId);
 router.post('/', createBooking);
-router.delete('/:id', requireAdmin, deleteBooking);
+router.delete('/:id', deleteBooking);
 
 export default router;

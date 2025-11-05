@@ -11,6 +11,9 @@ interface Booking {
   end_time: Date;
   comment: string | null;
   created_by: number;
+  creator_firstname: string | null;
+  creator_surname: string | null;
+  creator_email: string | null;
   status: 'confirmed' | 'canceled';
   canceled_by: number | null;
   canceled_reason: string | null;
@@ -26,18 +29,22 @@ export const getAllBookings = async (req: Request, res: Response) => {
   try {
     const [rows] = await pool.query<any[]>(
       `SELECT
-         id,
-         room_id,
-         name AS title,
-         start_time,
-         end_time,
-         comment,
-         created_by,
-         status,
-         canceled_by,
-         canceled_reason,
-         canceled_at
-       FROM booking`
+         booking.id,
+         booking.room_id,
+         booking.name AS title,
+         booking.start_time,
+         booking.end_time,
+         booking.comment,
+         booking.created_by,
+         creator.firstname AS creator_firstname,
+         creator.surname AS creator_surname,
+         creator.email AS creator_email,
+         booking.status,
+         booking.canceled_by,
+         booking.canceled_reason,
+         booking.canceled_at
+       FROM booking
+       LEFT JOIN \`user\` AS creator ON creator.id = booking.created_by`
     );
     const bookings: Booking[] = rows.map((row: any) => ({
       ...row,
@@ -65,20 +72,24 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
 
   try {
     let query = `SELECT
-                   id,
-                   room_id,
-                   name AS title,
-                   start_time,
-                   end_time,
-                   comment,
-                   created_by,
-                   status,
-                   canceled_by,
-                   canceled_reason,
-                   canceled_at
+                   booking.id,
+                   booking.room_id,
+                   booking.name AS title,
+                   booking.start_time,
+                   booking.end_time,
+                   booking.comment,
+                   booking.created_by,
+                   creator.firstname AS creator_firstname,
+                   creator.surname AS creator_surname,
+                   creator.email AS creator_email,
+                   booking.status,
+                   booking.canceled_by,
+                   booking.canceled_reason,
+                   booking.canceled_at
                  FROM booking
-                 WHERE room_id = ?
-                 AND status = 'confirmed'`;
+                 LEFT JOIN \`user\` AS creator ON creator.id = booking.created_by
+                 WHERE booking.room_id = ?
+                 AND booking.status = 'confirmed'`;
     const params: any[] = [roomId];
 
     // If date is provided, filter bookings for that specific date
@@ -86,14 +97,14 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
       const dateStr = date as string;
       const startOfDay = `${dateStr} 00:00:00`;
       const endOfDay = `${dateStr} 23:59:59`;
-      query += ' AND start_time >= ? AND start_time <= ?';
+      query += ' AND booking.start_time >= ? AND booking.start_time <= ?';
       params.push(startOfDay, endOfDay);
       console.log(`Fetching bookings for room ${roomId} on ${dateStr}`);
     } else {
       console.log(`Fetching all bookings for room ${roomId}`);
     }
 
-    query += ' ORDER BY start_time ASC';
+    query += ' ORDER BY booking.start_time ASC';
 
     const [rows] = await pool.query<any[]>(query, params);
     const bookings: Booking[] = rows.map((row: any) => ({
@@ -293,13 +304,41 @@ export const checkBookingConflict = async (req: Request, res: Response) => {
  * @desc Delete a booking by ID
  * @access Public
  */
-export const deleteBooking = async (req: Request, res: Response) => {
+export const deleteBooking = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
   try {
-    const [result] = await pool.query<any>('DELETE FROM booking WHERE id = ?', [id]);
+    const [rows] = await pool.query<any[]>(
+      `SELECT created_by FROM booking WHERE id = ?`,
+      [id]
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    const ownerId = rows[0]?.created_by;
+    const isOwner = ownerId === user.id;
+    const isAdmin = user.role === 'admin';
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'You may only delete your own bookings.' });
+    }
+
+    const [result] = await pool.query<any>(
+      `DELETE FROM booking WHERE id = ?`,
+      [id]
+    );
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Booking not found' });
     }
+
     res.json({ message: 'Booking deleted successfully' });
   } catch (error) {
     console.error('Error deleting booking:', error);
