@@ -155,6 +155,21 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ message: 'Please enter all required fields (room_id, title, start_time, end_time)' });
   }
 
+  if (bookingTitle.length < 2) {
+    return res.status(400).json({ message: 'Der Titel muss mindestens 2 Zeichen lang sein.' });
+  }
+
+  const startDate = new Date(start_time);
+  const endDate = new Date(end_time);
+
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
+  }
+
+  if (endDate.getTime() <= startDate.getTime()) {
+    return res.status(400).json({ message: 'Die Endzeit muss nach der Startzeit liegen.' });
+  }
+
   const status: 'confirmed' | 'canceled' = 'confirmed';
   const canceled_by = null;
   const canceled_reason = null;
