@@ -4,12 +4,15 @@ import { authenticate, requireAdmin } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.use(authenticate);
+// Admin-only routes
+router.get('/', authenticate, requireAdmin, getAllBookings);
 
-router.get('/', requireAdmin, getAllBookings);
+// Public routes (accessible to guests)
 router.get('/check-conflict/:roomId', checkBookingConflict);
 router.get('/room/:roomId', getBookingsByRoomId);
 router.post('/', createBooking);
-router.delete('/:id', deleteBooking);
+
+// Protected routes (authenticated users only)
+router.delete('/:id', authenticate, deleteBooking);
 
 export default router;
