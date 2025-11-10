@@ -32,11 +32,11 @@ CREATE TABLE IF NOT EXISTS `room` (
 CREATE TABLE IF NOT EXISTS `booking` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `room_id` INT NOT NULL,
-  `name` VARCHAR(255) NOT NULL,                        
+  `name` VARCHAR(255) NOT NULL,
   `start_time` DATETIME NOT NULL,
   `end_time` DATETIME NOT NULL,
   `comment` TEXT,
-  `created_by` INT NOT NULL,
+  `created_by` INT DEFAULT NULL,  -- Nullable to support guest bookings
   `status` ENUM('confirmed','canceled') NOT NULL DEFAULT 'confirmed',
   `canceled_by` INT DEFAULT NULL,
   `canceled_reason` VARCHAR(255) DEFAULT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS `booking` (
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   CONSTRAINT `fk_booking_room`       FOREIGN KEY (`room_id`)    REFERENCES `room`(`id`)  ON DELETE CASCADE,
-  CONSTRAINT `fk_booking_created_by` FOREIGN KEY (`created_by`) REFERENCES `user`(`id`)  ON DELETE RESTRICT,
+  CONSTRAINT `fk_booking_created_by` FOREIGN KEY (`created_by`) REFERENCES `user`(`id`)  ON DELETE SET NULL,  -- Changed to SET NULL to allow guests
   CONSTRAINT `fk_booking_canceled_by` FOREIGN KEY (`canceled_by`) REFERENCES `user`(`id`)  ON DELETE SET NULL,
 
   KEY `ix_booking_room_time` (`room_id`, `start_time`, `end_time`),

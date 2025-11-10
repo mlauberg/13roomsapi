@@ -125,34 +125,45 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
 
 /**
  * @route POST /api/bookings
- * @desc Create a new booking
- * @access Public
+ * @desc Create a new booking (supports both authenticated users and guests)
+ * @access Public (with optional authentication)
  */
 export const createBooking = async (req: AuthenticatedRequest, res: Response) => {
   const {
     room_id,
     title,
     name,
+    guestName,
     start_time,
     end_time,
     comment,
   } = req.body ?? {};
 
-  const createdBy = req.user?.id;
+  // Optional authentication - can be null for guest bookings
+  const createdBy = req.user?.id ?? null;
 
-  if (!createdBy) {
-    return res.status(401).json({ message: 'Authentication required' });
-  }
-
+  // Determine the booking title based on authentication status
+  // For authenticated users: use 'title' field
+  // For guests: use 'guestName' field (fallback to 'name' or 'title' for backwards compatibility)
   const bookingTitle: string =
-    typeof title === 'string' && title.trim().length > 0
-      ? title.trim()
-      : typeof name === 'string' && name.trim().length > 0
-        ? name.trim()
-        : '';
+    createdBy !== null
+      ? // Authenticated user - prefer 'title'
+        (typeof title === 'string' && title.trim().length > 0
+          ? title.trim()
+          : typeof name === 'string' && name.trim().length > 0
+            ? name.trim()
+            : '')
+      : // Guest user - prefer 'guestName', fallback to 'name' or 'title'
+        (typeof guestName === 'string' && guestName.trim().length > 0
+          ? guestName.trim()
+          : typeof title === 'string' && title.trim().length > 0
+            ? title.trim()
+            : typeof name === 'string' && name.trim().length > 0
+              ? name.trim()
+              : '');
 
   if (!room_id || !bookingTitle || !start_time || !end_time) {
-    return res.status(400).json({ message: 'Please enter all required fields (room_id, title, start_time, end_time)' });
+    return res.status(400).json({ message: 'Please enter all required fields (room_id, title/guestName, start_time, end_time)' });
   }
 
   if (bookingTitle.length < 2) {
