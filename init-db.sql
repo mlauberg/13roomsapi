@@ -51,3 +51,25 @@ CREATE TABLE IF NOT EXISTS `booking` (
   KEY `ix_booking_room_time` (`room_id`, `start_time`, `end_time`),
   KEY `ix_booking_creator_time` (`created_by`, `start_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- DEFAULT ADMIN USER FOR DEVELOPMENT
+-- ============================================================================
+-- This creates a default admin account for local development and testing.
+--
+-- Credentials:
+--   Email:    admin@13rooms.com
+--   Password: admin123
+--
+-- SECURITY WARNING: Change or remove this user in production environments!
+-- ============================================================================
+
+INSERT INTO `user` (email, firstname, surname, password_hash, role, is_active)
+VALUES (
+  'admin@13rooms.com',
+  'Admin',
+  'User',
+  '120000:765c7e19c85c2201b2eae6f318afb3c8:cf73c681f67d7f06361a393193c56f885f7d131545b0c9273a0a94c0a7c2c31c0c7001f4cedac2fb8cdcf3cb88ab84d8682303ca1f2ae49846e9965533cf58b4',
+  'admin',
+  1
+);

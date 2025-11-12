@@ -39,12 +39,15 @@ export const getAllBookings = async (req: Request, res: Response) => {
          creator.firstname AS creator_firstname,
          creator.surname AS creator_surname,
          creator.email AS creator_email,
+         room.name AS room_name,
          booking.status,
          booking.canceled_by,
          booking.canceled_reason,
          booking.canceled_at
        FROM booking
-       LEFT JOIN \`user\` AS creator ON creator.id = booking.created_by`
+       LEFT JOIN \`user\` AS creator ON creator.id = booking.created_by
+       LEFT JOIN room ON room.id = booking.room_id
+       ORDER BY booking.start_time DESC`
     );
     const bookings: Booking[] = rows.map((row: any) => ({
       ...row,

@@ -5,6 +5,7 @@ import { dbReady } from './models/db';
 import roomRoutes from './routes/rooms.routes';
 import bookingRoutes from './routes/bookings.routes';
 import authRoutes from './routes/auth.routes';
+import usersRoutes from './routes/users.routes';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/users', usersRoutes);
 
 // Basic route for testing server status
 app.get('/', (req, res) => {
