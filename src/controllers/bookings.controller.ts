@@ -326,9 +326,183 @@ export const checkBookingConflict = async (req: Request, res: Response) => {
 };
 
 /**
+ * @route GET /api/bookings/my-bookings
+ * @desc Get all bookings created by the currently authenticated user
+ * @access Private (requires authentication)
+ */
+export const getMyBookings = async (req: AuthenticatedRequest, res: Response) => {
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const [rows] = await pool.query<any[]>(
+      `SELECT
+         booking.id,
+         booking.room_id,
+         booking.name AS title,
+         booking.start_time,
+         booking.end_time,
+         booking.comment,
+         booking.created_by,
+         booking.status,
+         room.name AS room_name,
+         room.icon AS room_icon
+       FROM booking
+       INNER JOIN room ON room.id = booking.room_id
+       WHERE booking.created_by = ?
+       AND booking.status = 'confirmed'
+       ORDER BY booking.start_time ASC`,
+      [user.id]
+    );
+
+    const bookings = rows.map((row: any) => ({
+      id: row.id,
+      room_id: row.room_id,
+      room_name: row.room_name,
+      room_icon: row.room_icon,
+      title: row.title,
+      start_time: new Date(row.start_time),
+      end_time: new Date(row.end_time),
+      comment: row.comment ?? null,
+      created_by: row.created_by,
+      status: row.status
+    }));
+
+    console.log(`Found ${bookings.length} bookings for user ${user.id}`);
+    res.json(bookings);
+  } catch (error) {
+    console.error('Error fetching user bookings:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+/**
+ * @route PUT /api/bookings/:id
+ * @desc Update a booking (supports full reschedule with time updates and conflict checking)
+ * @access Private (requires authentication and ownership)
+ */
+export const updateBooking = async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const user = req.user;
+  const { title, comment, room_id, start_time, end_time } = req.body;
+
+  if (!user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  if (!title || typeof title !== 'string' || title.trim().length < 2) {
+    return res.status(400).json({ message: 'Der Titel muss mindestens 2 Zeichen lang sein.' });
+  }
+
+  try {
+    // Check if booking exists and verify ownership
+    const [rows] = await pool.query<any[]>(
+      `SELECT created_by, room_id, start_time, end_time FROM booking WHERE id = ?`,
+      [id]
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    const booking = rows[0];
+    const ownerId = booking?.created_by;
+    const isOwner = ownerId === user.id;
+    const isAdmin = user.role === 'admin';
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ message: 'You may only update your own bookings.' });
+    }
+
+    // Determine if this is a full reschedule (time/room update) or just a title/comment update
+    const isReschedule = start_time && end_time;
+
+    if (isReschedule) {
+      // FULL RESCHEDULE: Validate times and check for conflicts
+      console.log(`[Reschedule] Booking ${id}: Updating times from ${booking.start_time} - ${booking.end_time} to ${start_time} - ${end_time}`);
+
+      const startDate = new Date(start_time);
+      const endDate = new Date(end_time);
+
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
+      }
+
+      if (endDate.getTime() <= startDate.getTime()) {
+        return res.status(400).json({ message: 'Die Endzeit muss nach der Startzeit liegen.' });
+      }
+
+      const targetRoomId = room_id ?? booking.room_id;
+
+      // CRITICAL: Server-side conflict check (excluding the current booking)
+      // Check for overlapping bookings before updating
+      const [existingBookings] = await pool.query<any[]>(
+        `SELECT id, room_id, name AS title, start_time, end_time
+         FROM booking
+         WHERE room_id = ?
+         AND id != ?
+         AND start_time < ?
+         AND end_time > ?
+         AND status = 'confirmed'`,
+        [targetRoomId, id, end_time, start_time]
+      );
+
+      // If any overlapping booking exists, reject the request
+      if (existingBookings.length > 0) {
+        const conflict = existingBookings[0];
+        console.log(`[Reschedule] Conflict detected for booking ${id} in room ${targetRoomId}:`, conflict);
+        return res.status(409).json({
+          message: 'Dieser Zeitraum ist bereits gebucht.',
+          conflict: {
+            title: conflict.title ?? conflict.name,
+            name: conflict.title ?? conflict.name,
+            start_time: conflict.start_time,
+            end_time: conflict.end_time
+          }
+        });
+      }
+
+      // No conflict - proceed with full update
+      const [result] = await pool.query<any>(
+        `UPDATE booking SET room_id = ?, name = ?, start_time = ?, end_time = ?, comment = ? WHERE id = ?`,
+        [targetRoomId, title.trim(), start_time, end_time, comment ?? null, id]
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Booking not found' });
+      }
+
+      console.log(`[Reschedule] Booking ${id} rescheduled successfully by user ${user.id}`);
+      res.json({ message: 'Booking rescheduled successfully' });
+    } else {
+      // SIMPLE UPDATE: Only update title and comment (legacy behavior)
+      console.log(`[Update] Booking ${id}: Updating title/comment only`);
+
+      const [result] = await pool.query<any>(
+        `UPDATE booking SET name = ?, comment = ? WHERE id = ?`,
+        [title.trim(), comment ?? null, id]
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Booking not found' });
+      }
+
+      console.log(`[Update] Booking ${id} updated successfully by user ${user.id}`);
+      res.json({ message: 'Booking updated successfully' });
+    }
+  } catch (error) {
+    console.error('Error updating booking:', error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+/**
  * @route DELETE /api/bookings/:id
  * @desc Delete a booking by ID
- * @access Public
+ * @access Private (requires authentication and ownership or admin role)
  */
 export const deleteBooking = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
