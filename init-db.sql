@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS `booking` (
 -- SECURITY WARNING: Change or remove this user in production environments!
 -- ============================================================================
 
-INSERT INTO `user` (email, firstname, surname, password_hash, role, is_active)
+-- Use INSERT IGNORE to prevent errors if the user already exists.
+-- This makes the script safely re-runnable (idempotent).
+INSERT IGNORE INTO `user` (email, firstname, surname, password_hash, role, is_active)
 VALUES (
   'admin@13rooms.com',
   'Admin',
