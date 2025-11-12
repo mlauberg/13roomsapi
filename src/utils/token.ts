@@ -19,7 +19,10 @@ interface TokenPayload {
 const getSecret = (): string => {
   const secret = process.env.JWT_SECRET || process.env.APP_SECRET;
   if (!secret) {
-    throw new Error('JWT secret is not configured');
+    throw new Error('JWT secret is not configured. Set JWT_SECRET or APP_SECRET environment variable.');
+  }
+  if (secret.length < 32) {
+    throw new Error('JWT secret must be at least 32 characters long for security. Current length: ' + secret.length);
   }
   return secret;
 };
@@ -69,7 +72,9 @@ export const verifyToken = (token: string): TokenPayload | null => {
 
     return payload;
   } catch (error) {
-    console.error('Failed to verify token:', error);
+    // Log error type without exposing token content
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Token verification failed:', errorMessage);
     return null;
   }
 };

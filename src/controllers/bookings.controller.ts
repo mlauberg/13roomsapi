@@ -1,7 +1,50 @@
 import { Request, Response } from 'express';
 import pool from '../models/db';
+import validator from 'validator';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
+
+/**
+ * Sanitizes user input to prevent XSS attacks.
+ * Escapes HTML entities and trims whitespace.
+ */
+const sanitizeInput = (input: string | undefined | null): string | null => {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return null;
+  }
+  // Escape HTML entities to prevent XSS
+  return validator.escape(trimmed);
+};
+
+/**
+ * Validates and sanitizes a title field.
+ * Ensures minimum length after sanitization.
+ */
+const validateAndSanitizeTitle = (title: string | undefined | null): string => {
+  const sanitized = sanitizeInput(title);
+  if (!sanitized || sanitized.length < 2) {
+    throw new Error('Der Titel muss mindestens 2 Zeichen lang sein.');
+  }
+  if (sanitized.length > 200) {
+    throw new Error('Der Titel darf maximal 200 Zeichen lang sein.');
+  }
+  return sanitized;
+};
+
+/**
+ * Validates and sanitizes a comment field.
+ */
+const validateAndSanitizeComment = (comment: string | undefined | null): string | null => {
+  const sanitized = sanitizeInput(comment);
+  if (sanitized && sanitized.length > 1000) {
+    throw new Error('Der Kommentar darf maximal 1000 Zeichen lang sein.');
+  }
+  return sanitized;
+};
 
 // Interface for Booking data
 interface Booking {
@@ -26,7 +69,7 @@ interface Booking {
  * @desc Get all bookings
  * @access Public
  */
-export const getAllBookings = async (req: Request, res: Response) => {
+export const getAllBookings = async (_req: Request, res: Response) => {
   try {
     const [rows] = await pool.query<any[]>(
       `SELECT
@@ -178,22 +221,30 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
   // Determine the booking title based on authentication status
   // For authenticated users: use 'title' field
   // For guests: use 'guestName' field (fallback to 'name' or 'title' for backwards compatibility)
-  const bookingTitle: string =
-    createdBy !== null
-      ? // Authenticated user - prefer 'title'
-        (typeof title === 'string' && title.trim().length > 0
-          ? title.trim()
-          : typeof name === 'string' && name.trim().length > 0
-            ? name.trim()
-            : '')
-      : // Guest user - prefer 'guestName', fallback to 'name' or 'title'
-        (typeof guestName === 'string' && guestName.trim().length > 0
-          ? guestName.trim()
-          : typeof title === 'string' && title.trim().length > 0
-            ? title.trim()
-            : typeof name === 'string' && name.trim().length > 0
-              ? name.trim()
-              : '');
+  let rawTitle: string | undefined;
+  if (createdBy !== null) {
+    // Authenticated user - prefer 'title'
+    rawTitle = title || name;
+  } else {
+    // Guest user - prefer 'guestName', fallback to 'name' or 'title'
+    rawTitle = guestName || title || name;
+  }
+
+  // Validate and sanitize the title
+  let bookingTitle: string;
+  try {
+    bookingTitle = validateAndSanitizeTitle(rawTitle);
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid title' });
+  }
+
+  // Validate and sanitize the comment
+  let sanitizedComment: string | null;
+  try {
+    sanitizedComment = validateAndSanitizeComment(comment);
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid comment' });
+  }
 
   // --- CRITICAL FIX: Support both combined (start_time/end_time) and separate (date/startTime/endTime) formats ---
   // This ensures backwards compatibility while fixing timezone issues
@@ -213,12 +264,8 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ message: 'Please enter all required fields (room_id, title/guestName, start_time, end_time) or (room_id, title/guestName, date, startTime, endTime)' });
   }
 
-  if (!room_id || !bookingTitle) {
-    return res.status(400).json({ message: 'Please enter all required fields (room_id, title/guestName, start_time, end_time)' });
-  }
-
-  if (bookingTitle.length < 2) {
-    return res.status(400).json({ message: 'Der Titel muss mindestens 2 Zeichen lang sein.' });
+  if (!room_id) {
+    return res.status(400).json({ message: 'Room ID is required' });
   }
 
   // Validation: Create Date objects ONLY for validation, not for database insertion
@@ -305,7 +352,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
         bookingTitle,
         start_time_string,
         end_time_string,
-        comment ?? null,
+        sanitizedComment,
         createdBy,
         status,
         canceled_by ?? null,
@@ -327,7 +374,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
         title: bookingTitle,
         start_time: start_time_string,
         end_time: end_time_string,
-        comment: comment ?? null
+        comment: sanitizedComment
       }
     );
 
@@ -479,8 +526,20 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  if (!title || typeof title !== 'string' || title.trim().length < 2) {
-    return res.status(400).json({ message: 'Der Titel muss mindestens 2 Zeichen lang sein.' });
+  // Validate and sanitize the title
+  let sanitizedTitle: string;
+  try {
+    sanitizedTitle = validateAndSanitizeTitle(title);
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid title' });
+  }
+
+  // Validate and sanitize the comment
+  let sanitizedComment: string | null;
+  try {
+    sanitizedComment = validateAndSanitizeComment(comment);
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid comment' });
   }
 
   try {
@@ -573,7 +632,7 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       // No conflict - proceed with full update using literal time strings
       const [result] = await pool.query<any>(
         `UPDATE booking SET room_id = ?, name = ?, start_time = ?, end_time = ?, comment = ? WHERE id = ?`,
-        [targetRoomId, title.trim(), startTimeStr, endTimeStr, comment ?? null, id]
+        [targetRoomId, sanitizedTitle, startTimeStr, endTimeStr, sanitizedComment, id]
       );
 
       if (result.affectedRows === 0) {
@@ -595,8 +654,8 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
           new_start_time: startTimeStr,
           old_end_time: booking.end_time,
           new_end_time: endTimeStr,
-          new_title: title.trim(),
-          new_comment: comment ?? null
+          new_title: sanitizedTitle,
+          new_comment: sanitizedComment
         }
       );
 
@@ -607,7 +666,7 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
 
       const [result] = await pool.query<any>(
         `UPDATE booking SET name = ?, comment = ? WHERE id = ?`,
-        [title.trim(), comment ?? null, id]
+        [sanitizedTitle, sanitizedComment, id]
       );
 
       if (result.affectedRows === 0) {
@@ -623,8 +682,8 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         'BOOKING',
         parseInt(id),
         {
-          new_title: title.trim(),
-          new_comment: comment ?? null
+          new_title: sanitizedTitle,
+          new_comment: sanitizedComment
         }
       );
 

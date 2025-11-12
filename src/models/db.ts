@@ -5,6 +5,14 @@ import path from 'path';
 
 dotenv.config();
 
+// Validate required database environment variables at startup
+const requiredEnvVars = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+
 const ensureSchema = async () => {
   let initialConnection;
 

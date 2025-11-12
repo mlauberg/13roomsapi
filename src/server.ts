@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { dbReady } from './models/db';
 import roomRoutes from './routes/rooms.routes';
 import bookingRoutes from './routes/bookings.routes';
@@ -13,22 +15,40 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- START OF FIX ---
+// Security: Helmet middleware for security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
 
-// Define CORS options
+// Security: Global rate limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per window
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(globalLimiter);
+
+// CORS configuration
 const corsOptions = {
-  origin: 'http://localhost:4200', // Allow only the Angular app to connect
-  optionsSuccessStatus: 200 // For legacy browser support
+  origin: process.env.NODE_ENV === 'production'
+    ? process.env.FRONTEND_URL || 'http://localhost:4200'
+    : 'http://localhost:4200',
+  optionsSuccessStatus: 200
 };
-
-// Use CORS middleware with the specified options
-// THIS MUST BE PLACED BEFORE YOUR ROUTES
 app.use(cors(corsOptions));
 
-// --- END OF FIX ---
-
-// Middleware for parsing JSON request bodies
-app.use(express.json());
+// Middleware for parsing JSON request bodies with size limit
+app.use(express.json({ limit: '10mb' }));
 
 // API Routes
 app.use('/api/auth', authRoutes);
