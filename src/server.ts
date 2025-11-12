@@ -10,7 +10,11 @@ import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
 import logsRoutes from './routes/logs.routes';
 
-dotenv.config();
+// Load .env file only if not running in a Docker environment
+// In Docker, environment variables are injected via docker-compose.yml
+if (process.env.NODE_ENV !== 'docker') {
+  dotenv.config();
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,8 +45,8 @@ app.use(globalLimiter);
 // CORS configuration
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL || 'http://localhost:4200'
-    : 'http://localhost:4200',
+    ? process.env.FRONTEND_URL // In production, we only trust one URL
+    : ['http://localhost:4200', 'http://localhost:8080'], // Allow both for dev flexibility
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));

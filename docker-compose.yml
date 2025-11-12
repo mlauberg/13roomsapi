@@ -6,10 +6,10 @@ services:
     ports:
       - "3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-your_mysql_password}
+      MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: 13rooms
       MYSQL_USER: 13rooms_user
-      MYSQL_PASSWORD: ${DB_PASSWORD:-your_mysql_password}
+      MYSQL_PASSWORD: root
     volumes:
       # Persist database data
       - mysql_data:/var/lib/mysql
@@ -54,10 +54,13 @@ services:
     environment:
       # Database connection settings - use service name for container networking
       DB_HOST: database
-      DB_USER: ${DB_USER:-13rooms_user}
-      DB_PASSWORD: ${DB_PASSWORD:-your_mysql_password}
+      DB_USER: 13rooms_user
+      DB_PASSWORD: root
       DB_NAME: 13rooms
-      NODE_ENV: development
+      # JWT secret for authentication (minimum 32 characters required)
+      JWT_SECRET: 3cd5a2a57c731b76f94a458901dc38129fd5fe76429834fac042cafb93f1b508
+      # Flag to prevent loading local .env file inside container
+      NODE_ENV: docker
     depends_on:
       database:
         condition: service_healthy

@@ -71,6 +71,9 @@ export const register = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Registration failed:', error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Unable to register at this time.' });
   }
 };

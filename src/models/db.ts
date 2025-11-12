@@ -3,7 +3,11 @@ import dotenv from 'dotenv';
 import fs from 'fs/promises';
 import path from 'path';
 
-dotenv.config();
+// Load .env file only if not running in a Docker environment
+// In Docker, environment variables are injected via docker-compose.yml
+if (process.env.NODE_ENV !== 'docker') {
+  dotenv.config();
+}
 
 // Validate required database environment variables at startup
 const requiredEnvVars = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
