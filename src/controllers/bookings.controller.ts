@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../models/db';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
+import { ActivityLogService } from '../services/activity-log.service';
 
 // Interface for Booking data
 interface Booking {
@@ -314,6 +315,22 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     );
 
     console.log(`Booking created successfully for room ${room_id}: ${start_time_string} - ${end_time_string}`);
+
+    // Log the activity
+    await ActivityLogService.logActivity(
+      createdBy,
+      'CREATE',
+      'BOOKING',
+      result.insertId,
+      {
+        room_id,
+        title: bookingTitle,
+        start_time: start_time_string,
+        end_time: end_time_string,
+        comment: comment ?? null
+      }
+    );
+
     res.status(201).json({ message: 'Booking created successfully', bookingId: result.insertId });
   } catch (error) {
     console.error('Error creating booking:', error);
@@ -564,6 +581,25 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       }
 
       console.log(`[Reschedule] Booking ${id} rescheduled successfully by user ${user.id}`);
+
+      // Log the activity with old and new values
+      await ActivityLogService.logActivity(
+        user.id,
+        'UPDATE',
+        'BOOKING',
+        parseInt(id),
+        {
+          old_room_id: booking.room_id,
+          new_room_id: targetRoomId,
+          old_start_time: booking.start_time,
+          new_start_time: startTimeStr,
+          old_end_time: booking.end_time,
+          new_end_time: endTimeStr,
+          new_title: title.trim(),
+          new_comment: comment ?? null
+        }
+      );
+
       res.json({ message: 'Booking rescheduled successfully' });
     } else {
       // SIMPLE UPDATE: Only update title and comment (legacy behavior)
@@ -579,6 +615,19 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       }
 
       console.log(`[Update] Booking ${id} updated successfully by user ${user.id}`);
+
+      // Log the activity
+      await ActivityLogService.logActivity(
+        user.id,
+        'UPDATE',
+        'BOOKING',
+        parseInt(id),
+        {
+          new_title: title.trim(),
+          new_comment: comment ?? null
+        }
+      );
+
       res.json({ message: 'Booking updated successfully' });
     }
   } catch (error) {
@@ -602,7 +651,7 @@ export const deleteBooking = async (req: AuthenticatedRequest, res: Response) =>
 
   try {
     const [rows] = await pool.query<any[]>(
-      `SELECT created_by FROM booking WHERE id = ?`,
+      `SELECT created_by, room_id, name, start_time, end_time FROM booking WHERE id = ?`,
       [id]
     );
 
@@ -610,7 +659,8 @@ export const deleteBooking = async (req: AuthenticatedRequest, res: Response) =>
       return res.status(404).json({ message: 'Booking not found' });
     }
 
-    const ownerId = rows[0]?.created_by;
+    const booking = rows[0];
+    const ownerId = booking?.created_by;
     const isOwner = ownerId === user.id;
     const isAdmin = user.role === 'admin';
 
@@ -626,6 +676,20 @@ export const deleteBooking = async (req: AuthenticatedRequest, res: Response) =>
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Booking not found' });
     }
+
+    // Log the activity with details about the deleted booking
+    await ActivityLogService.logActivity(
+      user.id,
+      'DELETE',
+      'BOOKING',
+      parseInt(id),
+      {
+        room_id: booking.room_id,
+        title: booking.name,
+        start_time: booking.start_time,
+        end_time: booking.end_time
+      }
+    );
 
     res.json({ message: 'Booking deleted successfully' });
   } catch (error) {

@@ -6,6 +6,7 @@ import roomRoutes from './routes/rooms.routes';
 import bookingRoutes from './routes/bookings.routes';
 import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
+import logsRoutes from './routes/logs.routes';
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/logs', logsRoutes);
 
 // Basic route for testing server status
 app.get('/', (req, res) => {

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import pool from '../models/db';
 import { hashPassword } from '../utils/password';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
+import { ActivityLogService } from '../services/activity-log.service';
 
 const sanitizeEmail = (email: string): string => email.trim().toLowerCase();
 
@@ -104,6 +105,21 @@ export const createUser = async (req: AuthenticatedRequest, res: Response) => {
 
     const userId = result.insertId;
 
+    // Log the activity
+    await ActivityLogService.logActivity(
+      req.user?.id ?? null,
+      'CREATE',
+      'USER',
+      userId,
+      {
+        email: normalizedEmail,
+        firstname: firstname.trim(),
+        surname: surname.trim(),
+        role: normalizedRole,
+        is_active: activeStatus
+      }
+    );
+
     res.status(201).json({
       message: 'User successfully created.',
       user: {
@@ -136,15 +152,17 @@ export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
   }
 
   try {
-    // Check if user exists
+    // Check if user exists and fetch old data for logging
     const [existingRows] = await pool.query<any[]>(
-      'SELECT id FROM `user` WHERE id = ? LIMIT 1',
+      'SELECT id, email, firstname, surname, role, is_active FROM `user` WHERE id = ? LIMIT 1',
       [id]
     );
 
     if (existingRows.length === 0) {
       return res.status(404).json({ message: 'User not found.' });
     }
+
+    const oldUserData = existingRows[0];
 
     // Build dynamic update query
     const updates: string[] = [];
@@ -214,6 +232,23 @@ export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
       [id]
     );
 
+    // Log the activity with old and new values
+    const logDetails: any = {};
+    if (email) logDetails.old_email = oldUserData.email, logDetails.new_email = sanitizeEmail(email);
+    if (firstname) logDetails.old_firstname = oldUserData.firstname, logDetails.new_firstname = firstname.trim();
+    if (surname) logDetails.old_surname = oldUserData.surname, logDetails.new_surname = surname.trim();
+    if (password) logDetails.password_changed = true;
+    if (role) logDetails.old_role = oldUserData.role, logDetails.new_role = normalizeRole(role);
+    if (typeof is_active === 'boolean') logDetails.old_is_active = oldUserData.is_active, logDetails.new_is_active = is_active;
+
+    await ActivityLogService.logActivity(
+      req.user?.id ?? null,
+      'UPDATE',
+      'USER',
+      parseInt(id, 10),
+      logDetails
+    );
+
     res.json({
       message: 'User successfully updated.',
       user: updatedRows[0]
@@ -239,9 +274,9 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    // Check if user exists
+    // Check if user exists and fetch data for logging
     const [existingRows] = await pool.query<any[]>(
-      'SELECT id, email FROM `user` WHERE id = ? LIMIT 1',
+      'SELECT id, email, firstname, surname, role, is_active FROM `user` WHERE id = ? LIMIT 1',
       [id]
     );
 
@@ -249,14 +284,31 @@ export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ message: 'User not found.' });
     }
 
+    const userData = existingRows[0];
+
     // Delete user (CASCADE will handle related bookings)
     await pool.query('DELETE FROM `user` WHERE id = ?', [id]);
+
+    // Log the activity with details about the deleted user
+    await ActivityLogService.logActivity(
+      req.user?.id ?? null,
+      'DELETE',
+      'USER',
+      parseInt(id, 10),
+      {
+        email: userData.email,
+        firstname: userData.firstname,
+        surname: userData.surname,
+        role: userData.role,
+        is_active: userData.is_active
+      }
+    );
 
     res.json({
       message: 'User successfully deleted.',
       deletedUser: {
         id: parseInt(id, 10),
-        email: existingRows[0].email
+        email: userData.email
       }
     });
   } catch (error) {

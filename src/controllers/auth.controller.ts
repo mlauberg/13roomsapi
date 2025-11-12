@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import pool from '../models/db';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { generateToken } from '../utils/token';
+import { ActivityLogService } from '../services/activity-log.service';
 
 const sanitizeEmail = (email: string): string => email.trim().toLowerCase();
 
@@ -41,6 +42,21 @@ export const register = async (req: Request, res: Response) => {
 
     const userId = result.insertId;
     const token = generateToken({ id: userId, email: normalizedEmail, role: normalizedRole });
+
+    // Log the activity (user registers themselves)
+    await ActivityLogService.logActivity(
+      userId,
+      'CREATE',
+      'USER',
+      userId,
+      {
+        email: normalizedEmail,
+        firstname: firstname.trim(),
+        surname: surname.trim(),
+        role: normalizedRole,
+        self_registration: true
+      }
+    );
 
     res.status(201).json({
       message: 'Account successfully created.',
@@ -90,6 +106,18 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const token = generateToken({ id: user.id, email: user.email, role: user.role });
+
+    // Log the login activity
+    await ActivityLogService.logActivity(
+      user.id,
+      'LOGIN',
+      'USER',
+      user.id,
+      {
+        email: user.email,
+        role: user.role
+      }
+    );
 
     res.json({
       message: 'Login successful.',

@@ -52,6 +52,23 @@ CREATE TABLE IF NOT EXISTS `booking` (
   KEY `ix_booking_creator_time` (`created_by`, `start_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Create the activity_log table for audit trail
+CREATE TABLE IF NOT EXISTS `activity_log` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT DEFAULT NULL,
+  `action_type` ENUM('CREATE','UPDATE','DELETE','LOGIN','LOGOUT') NOT NULL,
+  `entity_type` ENUM('BOOKING','ROOM','USER') NOT NULL,
+  `entity_id` INT DEFAULT NULL,
+  `details` JSON DEFAULT NULL,
+  `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT `fk_activity_log_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE SET NULL,
+
+  KEY `ix_activity_log_user` (`user_id`, `timestamp`),
+  KEY `ix_activity_log_entity` (`entity_type`, `entity_id`, `timestamp`),
+  KEY `ix_activity_log_timestamp` (`timestamp`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================================
 -- DEFAULT ADMIN USER FOR DEVELOPMENT
 -- ============================================================================

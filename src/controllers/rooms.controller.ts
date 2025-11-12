@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import pool from '../models/db';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
+import { ActivityLogService } from '../services/activity-log.service';
 
 // Interface for Room data
 type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
@@ -242,9 +243,9 @@ export const getRoomById = async (req: Request, res: Response) => {
 /**
  * @route POST /api/rooms
  * @desc Create a new room
- * @access Public
+ * @access Private (requires admin)
  */
-export const createRoom = async (req: Request, res: Response) => {
+export const createRoom = async (req: AuthenticatedRequest, res: Response) => {
   const { name, capacity, status, location, amenities, icon } = req.body;
   console.log('Attempting to create room with data:', { name, capacity, status, location, amenities, icon });
   console.log('Type of amenities before stringify (createRoom):', typeof amenities, amenities);
@@ -263,6 +264,23 @@ export const createRoom = async (req: Request, res: Response) => {
       [name, capacity, normalizedStatus, location, amenitiesJson, icon]
     );
     console.log('Room created successfully with ID:', result.insertId);
+
+    // Log the activity
+    await ActivityLogService.logActivity(
+      req.user?.id ?? null,
+      'CREATE',
+      'ROOM',
+      result.insertId,
+      {
+        name,
+        capacity,
+        status: normalizedStatus,
+        location: location ?? null,
+        amenities: amenities ?? null,
+        icon: icon ?? null
+      }
+    );
+
     res.status(201).json({ message: 'Room created successfully', roomId: result.insertId });
   } catch (error) {
     console.error('Error creating room:', error);
@@ -273,9 +291,9 @@ export const createRoom = async (req: Request, res: Response) => {
 /**
  * @route PUT /api/rooms/:id
  * @desc Update a room by ID
- * @access Public
+ * @access Private (requires admin)
  */
-export const updateRoom = async (req: Request, res: Response) => {
+export const updateRoom = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { name, capacity, status, location, amenities, icon } = req.body ?? {};
   console.log('Attempting to update room ID:', id, 'with data:', { name, capacity, status, location, amenities, icon });
@@ -283,6 +301,18 @@ export const updateRoom = async (req: Request, res: Response) => {
   if (!id) {
     return res.status(400).json({ message: 'Room ID is required' });
   }
+
+  // Fetch old room data for logging
+  const [oldRoomRows] = await pool.query<any[]>(
+    'SELECT name, capacity, status, location, amenities, icon FROM room WHERE id = ?',
+    [Number(id)]
+  );
+
+  if (oldRoomRows.length === 0) {
+    return res.status(404).json({ message: 'Room not found' });
+  }
+
+  const oldRoomData = oldRoomRows[0];
 
   const fieldsToUpdate: string[] = [];
   const values: any[] = [];
@@ -370,6 +400,24 @@ export const updateRoom = async (req: Request, res: Response) => {
     }
 
     console.log('Room updated successfully for ID:', id);
+
+    // Log the activity with old and new values
+    const logDetails: any = {};
+    if (name !== undefined) logDetails.old_name = oldRoomData.name, logDetails.new_name = name;
+    if (capacity !== undefined) logDetails.old_capacity = oldRoomData.capacity, logDetails.new_capacity = capacity;
+    if (status !== undefined) logDetails.old_status = oldRoomData.status, logDetails.new_status = normalizeRoomStatus(status);
+    if (location !== undefined) logDetails.old_location = oldRoomData.location, logDetails.new_location = location;
+    if (amenities !== undefined) logDetails.old_amenities = oldRoomData.amenities, logDetails.new_amenities = amenities;
+    if (icon !== undefined) logDetails.old_icon = oldRoomData.icon, logDetails.new_icon = icon;
+
+    await ActivityLogService.logActivity(
+      req.user?.id ?? null,
+      'UPDATE',
+      'ROOM',
+      Number(id),
+      logDetails
+    );
+
     res.json({ message: 'Room updated successfully', room: updatedRoom });
   } catch (error) {
     console.error('Error updating room:', error);
@@ -380,18 +428,48 @@ export const updateRoom = async (req: Request, res: Response) => {
 /**
  * @route DELETE /api/rooms/:id
  * @desc Delete a room by ID
- * @access Public
+ * @access Private (requires admin)
  */
-export const deleteRoom = async (req: Request, res: Response) => {
+export const deleteRoom = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   console.log('Attempting to delete room ID:', id);
   try {
+    // Fetch room data before deleting for logging
+    const [roomRows] = await pool.query<any[]>(
+      'SELECT name, capacity, status, location, amenities, icon FROM room WHERE id = ?',
+      [id]
+    );
+
+    if (roomRows.length === 0) {
+      console.warn('Room not found for deletion with ID:', id);
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    const roomData = roomRows[0];
+
     const [result] = await pool.query<any>('DELETE FROM room WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       console.warn('Room not found for deletion with ID:', id);
       return res.status(404).json({ message: 'Room not found' });
     }
     console.log('Room deleted successfully for ID:', id);
+
+    // Log the activity with details about the deleted room
+    await ActivityLogService.logActivity(
+      req.user?.id ?? null,
+      'DELETE',
+      'ROOM',
+      Number(id),
+      {
+        name: roomData.name,
+        capacity: roomData.capacity,
+        status: roomData.status,
+        location: roomData.location,
+        amenities: roomData.amenities,
+        icon: roomData.icon
+      }
+    );
+
     res.json({ message: 'Room deleted successfully' });
   } catch (error) {
     console.error('Error deleting room:', error);
