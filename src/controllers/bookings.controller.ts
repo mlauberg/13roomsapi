@@ -67,9 +67,9 @@ export const getAllBookings = async (req: Request, res: Response) => {
 /**
  * @route GET /api/bookings/room/:roomId
  * @desc Get all bookings for a specific room (optionally filtered by date)
- * @access Public
+ * @access Public (with optional authentication for privacy)
  */
-export const getBookingsByRoomId = async (req: Request, res: Response) => {
+export const getBookingsByRoomId = async (req: AuthenticatedRequest, res: Response) => {
   const { roomId } = req.params;
   const { date } = req.query;
 
@@ -110,16 +110,42 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
     query += ' ORDER BY booking.start_time ASC';
 
     const [rows] = await pool.query<any[]>(query, params);
-    const bookings: Booking[] = rows.map((row: any) => ({
-      ...row,
-      title: row.title ?? row.name,
-      start_time: row.start_time,
-      end_time: row.end_time,
-      comment: row.comment ?? null,
-      canceled_at: row.canceled_at || null,
-    }));
-    console.log(`Found ${bookings.length} bookings for room ${roomId}`);
-    res.json(bookings);
+
+    // PRIVACY: Check if user is authenticated
+    const isGuest = !req.user;
+
+    let processedBookings: Booking[];
+
+    if (isGuest) {
+      // Guest user - anonymize booking details
+      console.log('[Privacy] Anonymizing booking data for guest user');
+      processedBookings = rows.map((row: any) => ({
+        ...row,
+        title: 'Belegt',
+        name: 'Belegt',
+        start_time: row.start_time,
+        end_time: row.end_time,
+        comment: null,
+        created_by: null,
+        creator_firstname: null,
+        creator_surname: null,
+        creator_email: null,
+        canceled_at: row.canceled_at || null,
+      }));
+    } else {
+      // Authenticated user - return full details
+      processedBookings = rows.map((row: any) => ({
+        ...row,
+        title: row.title ?? row.name,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        comment: row.comment ?? null,
+        canceled_at: row.canceled_at || null,
+      }));
+    }
+
+    console.log(`Found ${processedBookings.length} bookings for room ${roomId}`);
+    res.json(processedBookings);
   } catch (error) {
     console.error(`Error fetching bookings for room ${roomId}:`, error);
     res.status(500).json({ message: 'Server Error' });
@@ -298,9 +324,9 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
 /**
  * @route GET /api/bookings/check-conflict/:roomId
  * @desc Check if a time slot has a booking conflict
- * @access Public
+ * @access Public (with optional authentication for privacy)
  */
-export const checkBookingConflict = async (req: Request, res: Response) => {
+export const checkBookingConflict = async (req: AuthenticatedRequest, res: Response) => {
   const { roomId } = req.params;
   const { date, startTime, endTime } = req.query;
 
@@ -332,13 +358,31 @@ export const checkBookingConflict = async (req: Request, res: Response) => {
     if (rows.length > 0) {
       const conflict = rows[0];
       console.log(`Conflict found for room ${roomId}:`, conflict);
-      // Return the first conflicting booking
-      const normalizedTitle = conflict.title ?? conflict.name;
-      res.json({
-        ...conflict,
-        title: normalizedTitle,
-        name: normalizedTitle
-      });
+
+      // PRIVACY: Check if user is authenticated
+      const isGuest = !req.user;
+
+      if (isGuest) {
+        // Guest user - anonymize booking details
+        console.log('[Privacy] Anonymizing conflict data for guest user');
+        res.json({
+          id: conflict.id,
+          room_id: conflict.room_id,
+          title: 'Belegt',
+          name: 'Belegt',
+          start_time: conflict.start_time,
+          end_time: conflict.end_time,
+          comment: null
+        });
+      } else {
+        // Authenticated user - return full details
+        const normalizedTitle = conflict.title ?? conflict.name;
+        res.json({
+          ...conflict,
+          title: normalizedTitle,
+          name: normalizedTitle
+        });
+      }
     } else {
       console.log(`No conflict found for room ${roomId}`);
       // No conflict found

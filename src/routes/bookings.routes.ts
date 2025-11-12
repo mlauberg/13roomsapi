@@ -12,9 +12,9 @@ router.get('/my-bookings', authenticate, getMyBookings);
 router.put('/:id', authenticate, updateBooking);
 router.delete('/:id', authenticate, deleteBooking);
 
-// Public routes (accessible to guests)
-router.get('/check-conflict/:roomId', checkBookingConflict);
-router.get('/room/:roomId', getBookingsByRoomId);
+// Public routes (accessible to guests) - Use authenticateOptional for privacy anonymization
+router.get('/check-conflict/:roomId', authenticateOptional, checkBookingConflict);
+router.get('/room/:roomId', authenticateOptional, getBookingsByRoomId);
 
 // Optional authentication route - allows both authenticated users and guests
 router.post('/', authenticateOptional, createBooking);

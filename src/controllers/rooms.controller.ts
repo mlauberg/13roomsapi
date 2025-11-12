@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import pool from '../models/db';
+import { AuthenticatedRequest } from '../middleware/auth.middleware';
 
 // Interface for Room data
 type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
@@ -47,9 +48,9 @@ const normalizeRoomStatus = (status?: string | null): RoomStatus => {
 /**
  * @route GET /api/rooms
  * @desc Get all rooms
- * @access Public
+ * @access Public (with optional authentication for privacy)
  */
-export const getAllRooms = async (req: Request, res: Response) => {
+export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
   console.log('Attempting to get all rooms with current and next bookings...');
   try {
     const [roomRows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM room');
@@ -84,13 +85,32 @@ export const getAllRooms = async (req: Request, res: Response) => {
 
     console.log(`Found ${bookingRows.length} bookings for today`);
 
-    const allBookings: Booking[] = bookingRows.map((row: any) => ({
-      ...row,
-      title: row.title ?? row.name,
-      start_time: new Date(row.start_time),
-      end_time: new Date(row.end_time),
-      comment: row.comment ?? null,
-    }));
+    // PRIVACY: Check if user is authenticated
+    const isGuest = !req.user;
+
+    let allBookings: Booking[];
+
+    if (isGuest) {
+      // Guest user - anonymize booking details
+      console.log('[Privacy] Anonymizing booking data for guest user in getAllRooms');
+      allBookings = bookingRows.map((row: any) => ({
+        id: row.id,
+        room_id: row.room_id,
+        title: 'Belegt',
+        start_time: new Date(row.start_time),
+        end_time: new Date(row.end_time),
+        comment: null,
+      }));
+    } else {
+      // Authenticated user - return full details
+      allBookings = bookingRows.map((row: any) => ({
+        ...row,
+        title: row.title ?? row.name,
+        start_time: new Date(row.start_time),
+        end_time: new Date(row.end_time),
+        comment: row.comment ?? null,
+      }));
+    }
 
     // BUSINESS HOURS LOGIC
     // Define business hours: 08:00 to 20:00
