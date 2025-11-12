@@ -52,10 +52,10 @@ export const getAllBookings = async (req: Request, res: Response) => {
     const bookings: Booking[] = rows.map((row: any) => ({
       ...row,
       title: row.title ?? row.name,
-      start_time: new Date(row.start_time),
-      end_time: new Date(row.end_time),
+      start_time: row.start_time,
+      end_time: row.end_time,
       comment: row.comment ?? null,
-      canceled_at: row.canceled_at ? new Date(row.canceled_at) : null,
+      canceled_at: row.canceled_at || null,
     }));
     res.json(bookings);
   } catch (error) {
@@ -113,10 +113,10 @@ export const getBookingsByRoomId = async (req: Request, res: Response) => {
     const bookings: Booking[] = rows.map((row: any) => ({
       ...row,
       title: row.title ?? row.name,
-      start_time: new Date(row.start_time),
-      end_time: new Date(row.end_time),
+      start_time: row.start_time,
+      end_time: row.end_time,
       comment: row.comment ?? null,
-      canceled_at: row.canceled_at ? new Date(row.canceled_at) : null,
+      canceled_at: row.canceled_at || null,
     }));
     console.log(`Found ${bookings.length} bookings for room ${roomId}`);
     res.json(bookings);
@@ -139,6 +139,9 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     guestName,
     start_time,
     end_time,
+    date,
+    startTime,
+    endTime,
     comment,
   } = req.body ?? {};
 
@@ -165,7 +168,25 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
               ? name.trim()
               : '');
 
-  if (!room_id || !bookingTitle || !start_time || !end_time) {
+  // --- CRITICAL FIX: Support both combined (start_time/end_time) and separate (date/startTime/endTime) formats ---
+  // This ensures backwards compatibility while fixing timezone issues
+  let start_time_string: string;
+  let end_time_string: string;
+
+  if (date && startTime && endTime) {
+    // NEW FORMAT: Separate date and time fields - combine them directly as strings
+    // This prevents any timezone conversion by avoiding Date object creation
+    start_time_string = `${date} ${startTime}:00`;
+    end_time_string = `${date} ${endTime}:00`;
+  } else if (start_time && end_time) {
+    // OLD FORMAT: Combined datetime strings - use them directly
+    start_time_string = start_time;
+    end_time_string = end_time;
+  } else {
+    return res.status(400).json({ message: 'Please enter all required fields (room_id, title/guestName, start_time, end_time) or (room_id, title/guestName, date, startTime, endTime)' });
+  }
+
+  if (!room_id || !bookingTitle) {
     return res.status(400).json({ message: 'Please enter all required fields (room_id, title/guestName, start_time, end_time)' });
   }
 
@@ -173,8 +194,9 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ message: 'Der Titel muss mindestens 2 Zeichen lang sein.' });
   }
 
-  const startDate = new Date(start_time);
-  const endDate = new Date(end_time);
+  // Validation: Create Date objects ONLY for validation, not for database insertion
+  const startDate = new Date(start_time_string);
+  const endDate = new Date(end_time_string);
 
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
     return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
@@ -219,7 +241,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
        AND start_time < ?
        AND end_time > ?
        AND status = 'confirmed'`,
-      [room_id, end_time, start_time]
+      [room_id, end_time_string, start_time_string]
     );
 
     // If any overlapping booking exists, reject the request
@@ -237,7 +259,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
       });
     }
 
-    // No conflict - proceed with insertion
+    // No conflict - proceed with insertion using literal time strings
     const [result] = await pool.query<any>(
       `INSERT INTO booking (
         room_id,
@@ -254,8 +276,8 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
       [
         room_id,
         bookingTitle,
-        start_time,
-        end_time,
+        start_time_string,
+        end_time_string,
         comment ?? null,
         createdBy,
         status,
@@ -265,7 +287,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
       ]
     );
 
-    console.log(`Booking created successfully for room ${room_id}: ${start_time} - ${end_time}`);
+    console.log(`Booking created successfully for room ${room_id}: ${start_time_string} - ${end_time_string}`);
     res.status(201).json({ message: 'Booking created successfully', bookingId: result.insertId });
   } catch (error) {
     console.error('Error creating booking:', error);
@@ -367,8 +389,8 @@ export const getMyBookings = async (req: AuthenticatedRequest, res: Response) =>
       room_name: row.room_name,
       room_icon: row.room_icon,
       title: row.title,
-      start_time: new Date(row.start_time),
-      end_time: new Date(row.end_time),
+      start_time: row.start_time,
+      end_time: row.end_time,
       comment: row.comment ?? null,
       created_by: row.created_by,
       status: row.status
@@ -390,7 +412,7 @@ export const getMyBookings = async (req: AuthenticatedRequest, res: Response) =>
 export const updateBooking = async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const user = req.user;
-  const { title, comment, room_id, start_time, end_time } = req.body;
+  const { title, comment, room_id, start_time, end_time, date, startTime, endTime } = req.body;
 
   if (!user) {
     return res.status(401).json({ message: 'Authentication required' });
@@ -420,15 +442,34 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       return res.status(403).json({ message: 'You may only update your own bookings.' });
     }
 
+    // --- CRITICAL FIX: Support both combined and separate time formats for rescheduling ---
+    let start_time_string: string | undefined;
+    let end_time_string: string | undefined;
+
+    if (date && startTime && endTime) {
+      // NEW FORMAT: Separate date and time fields
+      start_time_string = `${date} ${startTime}:00`;
+      end_time_string = `${date} ${endTime}:00`;
+    } else if (start_time && end_time) {
+      // OLD FORMAT: Combined datetime strings
+      start_time_string = start_time;
+      end_time_string = end_time;
+    }
+
     // Determine if this is a full reschedule (time/room update) or just a title/comment update
-    const isReschedule = start_time && end_time;
+    const isReschedule = start_time_string && end_time_string;
 
     if (isReschedule) {
       // FULL RESCHEDULE: Validate times and check for conflicts
-      console.log(`[Reschedule] Booking ${id}: Updating times from ${booking.start_time} - ${booking.end_time} to ${start_time} - ${end_time}`);
+      // TypeScript type narrowing: At this point, both variables are guaranteed to be strings
+      // Using non-null assertions since we've verified they exist with the isReschedule check
+      const startTimeStr: string = start_time_string!;
+      const endTimeStr: string = end_time_string!;
 
-      const startDate = new Date(start_time);
-      const endDate = new Date(end_time);
+      console.log(`[Reschedule] Booking ${id}: Updating times from ${booking.start_time} - ${booking.end_time} to ${startTimeStr} - ${endTimeStr}`);
+
+      const startDate = new Date(startTimeStr);
+      const endDate = new Date(endTimeStr);
 
       if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
         return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
@@ -450,7 +491,7 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
          AND start_time < ?
          AND end_time > ?
          AND status = 'confirmed'`,
-        [targetRoomId, id, end_time, start_time]
+        [targetRoomId, id, endTimeStr, startTimeStr]
       );
 
       // If any overlapping booking exists, reject the request
@@ -468,10 +509,10 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         });
       }
 
-      // No conflict - proceed with full update
+      // No conflict - proceed with full update using literal time strings
       const [result] = await pool.query<any>(
         `UPDATE booking SET room_id = ?, name = ?, start_time = ?, end_time = ?, comment = ? WHERE id = ?`,
-        [targetRoomId, title.trim(), start_time, end_time, comment ?? null, id]
+        [targetRoomId, title.trim(), startTimeStr, endTimeStr, comment ?? null, id]
       );
 
       if (result.affectedRows === 0) {
