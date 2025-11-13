@@ -9,6 +9,7 @@ import {
   invalidateRoomsCache,
   updateRoomsCache
 } from '../services/cache.service';
+import { parseTimezoneNaiveDateString, formatToTimezoneNaiveString } from '../utils/date-utils';
 
 // Interface for Room data
 type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
@@ -54,21 +55,6 @@ const normalizeRoomStatus = (status?: string | null): RoomStatus => {
 };
 
 /**
- * Converts a Date object to timezone-naive YYYY-MM-DD HH:mm:ss string format.
- * This ensures "What You See Is What You Get" - the exact string stored in the database
- * is what the frontend receives, with no timezone conversions.
- */
-const formatToNaiveString = (date: Date | null | undefined): string => {
-  if (!date) return '';
-  return date.getFullYear() + '-' +
-         String(date.getMonth() + 1).padStart(2, '0') + '-' +
-         String(date.getDate()).padStart(2, '0') + ' ' +
-         String(date.getHours()).padStart(2, '0') + ':' +
-         String(date.getMinutes()).padStart(2, '0') + ':' +
-         String(date.getSeconds()).padStart(2, '0');
-};
-
-/**
  * @route GET /api/rooms
  * @desc Get all rooms
  * @access Public (with optional authentication for privacy)
@@ -89,12 +75,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     }));
 
     const now = new Date();
-
-    // Format dates for MySQL (YYYY-MM-DD HH:MM:SS)
-    const formatMySQLDateTime = (date: Date) => {
-      const pad = (n: number) => n.toString().padStart(2, '0');
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-    };
 
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
@@ -119,8 +99,8 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
         id: row.id,
         room_id: row.room_id,
         title: 'Belegt',
-        start_time: new Date(row.start_time),
-        end_time: new Date(row.end_time),
+        start_time: parseTimezoneNaiveDateString(row.start_time)!,
+        end_time: parseTimezoneNaiveDateString(row.end_time)!,
         comment: null,
       }));
     } else {
@@ -128,8 +108,8 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       allBookings = bookingRows.map((row: any) => ({
         ...row,
         title: row.title ?? row.name,
-        start_time: new Date(row.start_time),
-        end_time: new Date(row.end_time),
+        start_time: parseTimezoneNaiveDateString(row.start_time)!,
+        end_time: parseTimezoneNaiveDateString(row.end_time)!,
         comment: row.comment ?? null,
       }));
     }
@@ -202,21 +182,21 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       currentBooking: room.currentBooking
         ? {
             ...room.currentBooking,
-            start_time: formatToNaiveString(room.currentBooking.start_time) as any,
-            end_time: formatToNaiveString(room.currentBooking.end_time) as any
+            start_time: formatToTimezoneNaiveString(room.currentBooking.start_time) as any,
+            end_time: formatToTimezoneNaiveString(room.currentBooking.end_time) as any
           }
         : null,
       nextBooking: room.nextBooking
         ? {
             ...room.nextBooking,
-            start_time: formatToNaiveString(room.nextBooking.start_time) as any,
-            end_time: formatToNaiveString(room.nextBooking.end_time) as any
+            start_time: formatToTimezoneNaiveString(room.nextBooking.start_time) as any,
+            end_time: formatToTimezoneNaiveString(room.nextBooking.end_time) as any
           }
         : null,
       allBookingsToday: room.allBookingsToday?.map(booking => ({
         ...booking,
-        start_time: formatToNaiveString(booking.start_time) as any,
-        end_time: formatToNaiveString(booking.end_time) as any
+        start_time: formatToTimezoneNaiveString(booking.start_time) as any,
+        end_time: formatToTimezoneNaiveString(booking.end_time) as any
       })) || []
     }));
 

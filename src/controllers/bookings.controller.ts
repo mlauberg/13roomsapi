@@ -4,6 +4,7 @@ import validator from 'validator';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
 import { invalidateRoomsCache } from '../services/cache.service';
+import { parseTimezoneNaiveDateString } from '../utils/date-utils';
 
 /**
  * Sanitizes user input to prevent XSS attacks.
@@ -269,11 +270,11 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ message: 'Room ID is required' });
   }
 
-  // Validation: Create Date objects ONLY for validation, not for database insertion
-  const startDate = new Date(start_time_string);
-  const endDate = new Date(end_time_string);
+  // Validation: Parse datetime strings using timezone-naive parser
+  const startDate = parseTimezoneNaiveDateString(start_time_string);
+  const endDate = parseTimezoneNaiveDateString(end_time_string);
 
-  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+  if (!startDate || !endDate) {
     return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
   }
 
@@ -590,10 +591,11 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
 
       console.log(`[Reschedule] Booking ${id}: Updating times from ${booking.start_time} - ${booking.end_time} to ${startTimeStr} - ${endTimeStr}`);
 
-      const startDate = new Date(startTimeStr);
-      const endDate = new Date(endTimeStr);
+      // Validation: Parse datetime strings using timezone-naive parser
+      const startDate = parseTimezoneNaiveDateString(startTimeStr);
+      const endDate = parseTimezoneNaiveDateString(endTimeStr);
 
-      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      if (!startDate || !endDate) {
         return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
       }
 
