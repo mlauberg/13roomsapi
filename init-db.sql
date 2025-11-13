@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS `activity_log` (
   `entity_type` ENUM('BOOKING','ROOM','USER') NOT NULL,
   `entity_id` INT DEFAULT NULL,
   `details` JSON DEFAULT NULL,
-  `timestamp` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `timestamp` DATETIME NOT NULL,
 
   CONSTRAINT `fk_activity_log_user` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE SET NULL,
 
