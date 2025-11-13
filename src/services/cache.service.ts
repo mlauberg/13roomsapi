@@ -1,19 +1,28 @@
-// --- START: IN-MEMORY CACHE FOR GET /api/rooms ---
-export let cachedRoomsData: any = null;
-export let cacheTimestamp: number = 0;
-export const CACHE_TTL_MS = 45000; // Cache lifetime: 45 seconds
-// --- END: IN-MEMORY CACHE ---
+// It is okay to define the interface here for this fix.
+interface RoomWithBookingInfo {
+  id: number;
+  name: string;
+  capacity: number;
+  status: string;
+  location: string | null;
+  amenities: string[] | null;
+  icon: string | null;
+  currentBooking: any | null;
+  nextBooking: any | null;
+  allBookingsToday: any[];
+}
 
-/**
- * Invalidates the in-memory cache for GET /api/rooms.
- * MUST be called after any operation that changes room or booking data.
- */
+export let cachedRoomsData: RoomWithBookingInfo[] | null = null;
+export let cacheTimestamp: number = 0;
+export const CACHE_TTL_MS = 45000;
+
 export function invalidateRoomsCache() {
+  console.log('[CACHE INVALIDATION] The rooms cache has been cleared due to a data change.');
   cachedRoomsData = null;
   cacheTimestamp = 0;
 }
 
-export function updateRoomsCache(data: any) {
+export function updateRoomsCache(data: RoomWithBookingInfo[]) {
   cachedRoomsData = data;
   cacheTimestamp = Date.now();
 }

@@ -109,3 +109,51 @@ export function formatToTimezoneNaiveString(date: Date | null | undefined): stri
 export function getCurrentTimezoneNaiveTimestamp(): string {
   return formatToTimezoneNaiveString(new Date());
 }
+
+/**
+ * TIMEZONE-SAFE: Gets the current datetime as a timezone-naive string.
+ *
+ * This is the ONLY approved way to get "now" for business logic comparisons.
+ * Returns current server time in the standard format for string comparisons.
+ *
+ * @returns Current datetime in "YYYY-MM-DD HH:mm:ss" format
+ *
+ * @example
+ * getCurrentNaiveDateTimeString()
+ * // Returns "2025-11-13 14:30:00" (current server time)
+ */
+export function getCurrentNaiveDateTimeString(): string {
+  return formatToTimezoneNaiveString(new Date());
+}
+
+/**
+ * TIMEZONE-SAFE DURATION CALCULATION
+ *
+ * Calculates the difference in seconds between two timezone-naive datetime strings.
+ * Returns POSITIVE if datetime2 is LATER than datetime1.
+ * Returns NEGATIVE if datetime2 is EARLIER than datetime1.
+ *
+ * Uses pure string parsing with Date.UTC (treats all inputs consistently as UTC).
+ * Safe for calculating durations, progress, and remaining time.
+ *
+ * @param datetime1 - Start time in 'YYYY-MM-DD HH:mm:ss' format
+ * @param datetime2 - End time in 'YYYY-MM-DD HH:mm:ss' format
+ * @returns Difference in seconds (datetime2 - datetime1)
+ *
+ * @example
+ * calculateSecondsBetweenNaive("2025-11-13 14:00:00", "2025-11-13 15:30:00") // Returns 5400 (90 minutes)
+ * calculateSecondsBetweenNaive("2025-11-13 15:00:00", "2025-11-13 14:00:00") // Returns -3600 (-60 minutes)
+ */
+export function calculateSecondsBetweenNaive(datetime1: string, datetime2: string): number {
+  const parseDateTime = (str: string): number => {
+    const [datePart, timePart] = str.split(' ');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes, seconds = 0] = timePart.split(':').map(Number);
+
+    // Convert to timestamp using Date.UTC (always treats input as UTC, no timezone conversion)
+    // This is safe because we're using the numeric components directly
+    return Date.UTC(year, month - 1, day, hours, minutes, seconds) / 1000;
+  };
+
+  return parseDateTime(datetime2) - parseDateTime(datetime1);
+}

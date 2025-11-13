@@ -9,7 +9,7 @@ import {
   invalidateRoomsCache,
   updateRoomsCache
 } from '../services/cache.service';
-import { parseTimezoneNaiveDateString, formatToTimezoneNaiveString } from '../utils/date-utils';
+import { getCurrentNaiveDateTimeString, calculateSecondsBetweenNaive } from '../utils/date-utils';
 
 // Interface for Room data
 type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
@@ -74,10 +74,8 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       amenities: row.amenities ? JSON.parse(row.amenities) : null,
     }));
 
-    const now = new Date();
-
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    // TIME ARCHITECTURE COMPLIANCE: Use string-based "now" for all time logic
+    const nowStr = getCurrentNaiveDateTimeString();
 
     // Fetch all bookings that overlap with today
     const [bookingRows] = await pool.query<any[]>(
@@ -91,7 +89,15 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     // PRIVACY: Check if user is authenticated
     const isGuest = !req.user;
 
-    let allBookings: Booking[];
+    // TIME ARCHITECTURE: Keep bookings as strings (no Date object conversion)
+    let allBookings: Array<{
+      id: number;
+      room_id: number;
+      title: string;
+      start_time: string;
+      end_time: string;
+      comment: string | null;
+    }>;
 
     if (isGuest) {
       // Guest user - anonymize booking details
@@ -99,45 +105,49 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
         id: row.id,
         room_id: row.room_id,
         title: 'Belegt',
-        start_time: parseTimezoneNaiveDateString(row.start_time)!,
-        end_time: parseTimezoneNaiveDateString(row.end_time)!,
+        start_time: row.start_time,  // Keep as string
+        end_time: row.end_time,      // Keep as string
         comment: null,
       }));
     } else {
       // Authenticated user - return full details
       allBookings = bookingRows.map((row: any) => ({
-        ...row,
+        id: row.id,
+        room_id: row.room_id,
         title: row.title ?? row.name,
-        start_time: parseTimezoneNaiveDateString(row.start_time)!,
-        end_time: parseTimezoneNaiveDateString(row.end_time)!,
+        start_time: row.start_time,  // Keep as string
+        end_time: row.end_time,      // Keep as string
         comment: row.comment ?? null,
       }));
     }
 
     // BUSINESS HOURS LOGIC
     // Define business hours: 08:00 to 20:00
-    const currentHour = now.getHours();
+    // Extract hour from the current datetime string
+    const currentHour = parseInt(nowStr.split(' ')[1].split(':')[0], 10);
     const isOutsideBusinessHours = currentHour < 8 || currentHour >= 20;
 
     const roomsWithBookingInfo = rooms.map(room => {
       const roomBookings = allBookings.filter(booking => booking.room_id === room.id);
 
-      let currentBooking: Booking | undefined = undefined;
-      let nextBooking: Booking | undefined = undefined;
+      let currentBooking: typeof allBookings[0] | undefined = undefined;
+      let nextBooking: typeof allBookings[0] | undefined = undefined;
 
       // Find current booking (ongoing right now)
+      // TIME ARCHITECTURE: Use string comparison (start_time <= nowStr && end_time > nowStr)
       currentBooking = roomBookings.find(booking => {
-        const isCurrentlyBooked = booking.start_time <= now && booking.end_time > now;
+        const isCurrentlyBooked = booking.start_time <= nowStr && booking.end_time > nowStr;
         return isCurrentlyBooked;
       });
 
       // Find next booking for today
+      // TIME ARCHITECTURE: Use string comparison (start_time > nowStr)
       const futureBookingsToday = roomBookings
         .filter(booking => {
-          const isFuture = booking.start_time > now;
+          const isFuture = booking.start_time > nowStr;
           return isFuture;
         })
-        .sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
+        .sort((a, b) => a.start_time.localeCompare(b.start_time));  // String sort
 
       if (futureBookingsToday.length > 0) {
         nextBooking = futureBookingsToday[0];
@@ -146,15 +156,16 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       // Calculate total bookings and booked minutes for today
       const totalBookingsToday = roomBookings.length;
       const totalBookedMinutesToday = roomBookings.reduce((total, booking) => {
-        // Calculate the duration of each booking in minutes
-        const durationMs = booking.end_time.getTime() - booking.start_time.getTime();
-        const durationMinutes = Math.floor(durationMs / (1000 * 60));
+        // TIME ARCHITECTURE: Use calculateSecondsBetweenNaive for duration
+        const durationSeconds = calculateSecondsBetweenNaive(booking.start_time, booking.end_time);
+        const durationMinutes = Math.floor(durationSeconds / 60);
         return total + durationMinutes;
       }, 0);
 
       // Sort all room bookings by start time for frontend block detection
+      // TIME ARCHITECTURE: Use string comparison
       const sortedRoomBookings = roomBookings.sort((a, b) =>
-        a.start_time.getTime() - b.start_time.getTime()
+        a.start_time.localeCompare(b.start_time)
       );
 
       // APPLY BUSINESS HOURS OVERRIDE
@@ -175,34 +186,11 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    // CRITICAL: Convert all Date objects to timezone-naive strings before sending to frontend
-    // This ensures "What You See Is What You Get" - no timezone conversions
-    const finalRoomsWithBookingInfo = roomsWithBookingInfo.map(room => ({
-      ...room,
-      currentBooking: room.currentBooking
-        ? {
-            ...room.currentBooking,
-            start_time: formatToTimezoneNaiveString(room.currentBooking.start_time) as any,
-            end_time: formatToTimezoneNaiveString(room.currentBooking.end_time) as any
-          }
-        : null,
-      nextBooking: room.nextBooking
-        ? {
-            ...room.nextBooking,
-            start_time: formatToTimezoneNaiveString(room.nextBooking.start_time) as any,
-            end_time: formatToTimezoneNaiveString(room.nextBooking.end_time) as any
-          }
-        : null,
-      allBookingsToday: room.allBookingsToday?.map(booking => ({
-        ...booking,
-        start_time: formatToTimezoneNaiveString(booking.start_time) as any,
-        end_time: formatToTimezoneNaiveString(booking.end_time) as any
-      })) || []
-    }));
+    // TIME ARCHITECTURE: Bookings are already timezone-naive strings
+    // No conversion needed - they stay as strings throughout
+    updateRoomsCache(roomsWithBookingInfo);
 
-    updateRoomsCache(finalRoomsWithBookingInfo);
-
-    res.json(finalRoomsWithBookingInfo);
+    res.json(roomsWithBookingInfo);
   } catch (error) {
     console.error('Error fetching rooms with booking info:', error);
     res.status(500).json({ message: 'Server Error' });

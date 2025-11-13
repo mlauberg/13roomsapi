@@ -4,7 +4,7 @@ import validator from 'validator';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
 import { invalidateRoomsCache } from '../services/cache.service';
-import { parseTimezoneNaiveDateString } from '../utils/date-utils';
+import { parseTimezoneNaiveDateString, calculateSecondsBetweenNaive } from '../utils/date-utils';
 
 /**
  * Sanitizes user input to prevent XSS attacks.
@@ -266,7 +266,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ message: 'Room ID is required' });
   }
 
-  // Validation: Parse datetime strings using timezone-naive parser
+  // Validation: Check datetime format using timezone-naive parser
   const startDate = parseTimezoneNaiveDateString(start_time_string);
   const endDate = parseTimezoneNaiveDateString(end_time_string);
 
@@ -274,7 +274,10 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
   }
 
-  if (endDate.getTime() <= startDate.getTime()) {
+  // TIME ARCHITECTURE: Use calculateSecondsBetweenNaive for comparison
+  // If duration is <= 0, end time is not after start time
+  const durationSeconds = calculateSecondsBetweenNaive(start_time_string, end_time_string);
+  if (durationSeconds <= 0) {
     return res.status(400).json({ message: 'Die Endzeit muss nach der Startzeit liegen.' });
   }
 
@@ -579,7 +582,7 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       const endTimeStr: string = end_time_string!;
 
 
-      // Validation: Parse datetime strings using timezone-naive parser
+      // Validation: Check datetime format using timezone-naive parser
       const startDate = parseTimezoneNaiveDateString(startTimeStr);
       const endDate = parseTimezoneNaiveDateString(endTimeStr);
 
@@ -587,7 +590,10 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         return res.status(400).json({ message: 'Ungültiges Start- oder Enddatum.' });
       }
 
-      if (endDate.getTime() <= startDate.getTime()) {
+      // TIME ARCHITECTURE: Use calculateSecondsBetweenNaive for comparison
+      // If duration is <= 0, end time is not after start time
+      const durationSeconds = calculateSecondsBetweenNaive(startTimeStr, endTimeStr);
+      if (durationSeconds <= 0) {
         return res.status(400).json({ message: 'Die Endzeit muss nach der Startzeit liegen.' });
       }
 
