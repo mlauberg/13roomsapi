@@ -2,6 +2,13 @@ import { Request, Response } from 'express';
 import pool from '../models/db';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
+import {
+  cachedRoomsData,
+  cacheTimestamp,
+  CACHE_TTL_MS,
+  invalidateRoomsCache,
+  updateRoomsCache
+} from '../services/cache.service';
 
 // Interface for Room data
 type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
@@ -67,7 +74,12 @@ const formatToNaiveString = (date: Date | null | undefined): string => {
  * @access Public (with optional authentication for privacy)
  */
 export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
-  console.log('Attempting to get all rooms with current and next bookings...');
+  const now = Date.now();
+  if (cachedRoomsData && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    console.log(`[CACHE HIT] Returning cached rooms data. Age: ${Math.round((now - cacheTimestamp) / 1000)}s`);
+    return res.json(cachedRoomsData);
+  }
+  console.log('[CACHE MISS] Fetching fresh rooms data from database...');
   try {
     const [roomRows] = await pool.query<any[]>('SELECT id, name, capacity, status, location, JSON_UNQUOTE(amenities) AS amenities, icon FROM room');
     const rooms: Room[] = roomRows.map((row: any) => ({
@@ -77,18 +89,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     }));
 
     const now = new Date();
-    console.log('═══════════════════════════════════════════════════════════════');
-    console.log('[BACKEND DIAGNOSTIC] Current server time (NOW):');
-    console.log('  ISO String:', now.toISOString());
-    console.log('  Local String:', now.toLocaleString());
-    console.log('  Timestamp (ms):', now.getTime());
-    console.log('  getFullYear():', now.getFullYear());
-    console.log('  getMonth():', now.getMonth() + 1);
-    console.log('  getDate():', now.getDate());
-    console.log('  getHours():', now.getHours());
-    console.log('  getMinutes():', now.getMinutes());
-    console.log('  getSeconds():', now.getSeconds());
-    console.log('═══════════════════════════════════════════════════════════════');
 
     // Format dates for MySQL (YYYY-MM-DD HH:MM:SS)
     const formatMySQLDateTime = (date: Date) => {
@@ -99,8 +99,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-    console.log('Fetching bookings from', formatMySQLDateTime(todayStart), 'to', formatMySQLDateTime(todayEnd));
-
     // Fetch all bookings that overlap with today
     const [bookingRows] = await pool.query<any[]>(
       `SELECT id, room_id, name AS title, start_time, end_time, comment
@@ -110,8 +108,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
        ORDER BY start_time ASC`
     );
 
-    console.log(`Found ${bookingRows.length} bookings for today`);
-
     // PRIVACY: Check if user is authenticated
     const isGuest = !req.user;
 
@@ -119,7 +115,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
 
     if (isGuest) {
       // Guest user - anonymize booking details
-      console.log('[Privacy] Anonymizing booking data for guest user in getAllRooms');
       allBookings = bookingRows.map((row: any) => ({
         id: row.id,
         room_id: row.room_id,
@@ -144,68 +139,28 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     const currentHour = now.getHours();
     const isOutsideBusinessHours = currentHour < 8 || currentHour >= 20;
 
-    console.log('Business hours check:', {
-      currentHour,
-      isOutsideBusinessHours,
-      time: now.toISOString()
-    });
-
     const roomsWithBookingInfo = rooms.map(room => {
       const roomBookings = allBookings.filter(booking => booking.room_id === room.id);
-
-      console.log(`\n[BACKEND - Room ${room.name}] Analyzing ${roomBookings.length} bookings...`);
 
       let currentBooking: Booking | undefined = undefined;
       let nextBooking: Booking | undefined = undefined;
 
       // Find current booking (ongoing right now)
-      console.log(`[BACKEND - Room ${room.name}] Looking for CURRENT booking...`);
-      console.log(`  NOW (for comparison):`, now.toISOString(), '| ms:', now.getTime());
-
       currentBooking = roomBookings.find(booking => {
-        console.log(`  Checking booking ID ${booking.id}:`);
-        console.log(`    DB start_time string:`, booking.start_time);
-        console.log(`    DB end_time string:`, booking.end_time);
-        console.log(`    start_time (Date):`, booking.start_time.toISOString(), '| ms:', booking.start_time.getTime());
-        console.log(`    end_time (Date):`, booking.end_time.toISOString(), '| ms:', booking.end_time.getTime());
-        console.log(`    start <= now?`, booking.start_time.getTime() <= now.getTime(), '(', booking.start_time.getTime(), '<=', now.getTime(), ')');
-        console.log(`    end > now?`, booking.end_time.getTime() > now.getTime(), '(', booking.end_time.getTime(), '>', now.getTime(), ')');
-
         const isCurrentlyBooked = booking.start_time <= now && booking.end_time > now;
-        console.log(`    → Is currently booked?`, isCurrentlyBooked);
-
-        if (isCurrentlyBooked) {
-          console.log(`    ✓ Room ${room.name} is currently booked (booking ID: ${booking.id})`);
-        }
         return isCurrentlyBooked;
       });
 
-      if (currentBooking) {
-        console.log(`  → CURRENT booking found: ID ${currentBooking.id}`);
-      } else {
-        console.log(`  → NO current booking`);
-      }
-
       // Find next booking for today
-      console.log(`[BACKEND - Room ${room.name}] Looking for NEXT booking...`);
-
       const futureBookingsToday = roomBookings
         .filter(booking => {
           const isFuture = booking.start_time > now;
-          console.log(`  Checking booking ID ${booking.id}:`);
-          console.log(`    start_time:`, booking.start_time.toISOString());
-          console.log(`    start_time > now?`, isFuture, '(', booking.start_time.getTime(), '>', now.getTime(), ')');
           return isFuture;
         })
         .sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
 
-      console.log(`  Found ${futureBookingsToday.length} future bookings`);
-
       if (futureBookingsToday.length > 0) {
         nextBooking = futureBookingsToday[0];
-        console.log(`  → NEXT booking found: ID ${nextBooking.id} at ${nextBooking.start_time.toISOString()}`);
-      } else {
-        console.log(`  → NO next booking`);
       }
 
       // Calculate total bookings and booked minutes for today
@@ -217,8 +172,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
         return total + durationMinutes;
       }, 0);
 
-      console.log(`Room ${room.name}: ${totalBookingsToday} bookings, ${totalBookedMinutesToday} minutes booked today`);
-
       // Sort all room bookings by start time for frontend block detection
       const sortedRoomBookings = roomBookings.sort((a, b) =>
         a.start_time.getTime() - b.start_time.getTime()
@@ -229,7 +182,6 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       if (isOutsideBusinessHours) {
         // Override status to 'night_rest' if outside business hours
         finalStatus = 'night_rest';
-        console.log(`Room ${room.name}: Status overridden to 'night_rest' (outside business hours)`);
       }
 
       return {
@@ -243,21 +195,9 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       };
     });
 
-    console.log('Successfully fetched rooms with current and next booking info:', roomsWithBookingInfo.length, 'rooms found.');
-
-    // Log summary for debugging
-    roomsWithBookingInfo.forEach(room => {
-      if (room.currentBooking || room.nextBooking) {
-        console.log(`Room ${room.name}:`, {
-          currentBooking: room.currentBooking ? `${new Date(room.currentBooking.start_time).toLocaleTimeString()} - ${new Date(room.currentBooking.end_time).toLocaleTimeString()}` : 'none',
-          nextBooking: room.nextBooking ? `${new Date(room.nextBooking.start_time).toLocaleTimeString()} - ${new Date(room.nextBooking.end_time).toLocaleTimeString()}` : 'none'
-        });
-      }
-    });
-
     // CRITICAL: Convert all Date objects to timezone-naive strings before sending to frontend
     // This ensures "What You See Is What You Get" - no timezone conversions
-    const finalRooms = roomsWithBookingInfo.map(room => ({
+    const finalRoomsWithBookingInfo = roomsWithBookingInfo.map(room => ({
       ...room,
       currentBooking: room.currentBooking
         ? {
@@ -280,14 +220,9 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       })) || []
     }));
 
-    console.log('\n[TIMEZONE-NAIVE ENFORCEMENT] Sample output for verification:');
-    if (finalRooms.length > 0 && finalRooms[0].allBookingsToday && finalRooms[0].allBookingsToday.length > 0) {
-      console.log('  First booking start_time:', finalRooms[0].allBookingsToday[0].start_time);
-      console.log('  First booking end_time:', finalRooms[0].allBookingsToday[0].end_time);
-      console.log('  ✓ Format verified: YYYY-MM-DD HH:mm:ss (no timezone suffix)');
-    }
+    updateRoomsCache(finalRoomsWithBookingInfo);
 
-    res.json(finalRooms);
+    res.json(finalRoomsWithBookingInfo);
   } catch (error) {
     console.error('Error fetching rooms with booking info:', error);
     res.status(500).json({ message: 'Server Error' });
@@ -368,6 +303,7 @@ export const createRoom = async (req: AuthenticatedRequest, res: Response) => {
       }
     );
 
+    invalidateRoomsCache();
     res.status(201).json({ message: 'Room created successfully', roomId: result.insertId });
   } catch (error) {
     console.error('Error creating room:', error);
@@ -505,6 +441,7 @@ export const updateRoom = async (req: AuthenticatedRequest, res: Response) => {
       logDetails
     );
 
+    invalidateRoomsCache();
     res.json({ message: 'Room updated successfully', room: updatedRoom });
   } catch (error) {
     console.error('Error updating room:', error);
@@ -557,6 +494,7 @@ export const deleteRoom = async (req: AuthenticatedRequest, res: Response) => {
       }
     );
 
+    invalidateRoomsCache();
     res.json({ message: 'Room deleted successfully' });
   } catch (error) {
     console.error('Error deleting room:', error);

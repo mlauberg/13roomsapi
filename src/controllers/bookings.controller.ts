@@ -3,6 +3,7 @@ import pool from '../models/db';
 import validator from 'validator';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
+import { invalidateRoomsCache } from '../services/cache.service';
 
 /**
  * Sanitizes user input to prevent XSS attacks.
@@ -378,6 +379,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
       }
     );
 
+    invalidateRoomsCache();
     res.status(201).json({ message: 'Booking created successfully', bookingId: result.insertId });
   } catch (error) {
     console.error('Error creating booking:', error);
@@ -659,6 +661,7 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         }
       );
 
+      invalidateRoomsCache();
       res.json({ message: 'Booking rescheduled successfully' });
     } else {
       // SIMPLE UPDATE: Only update title and comment (legacy behavior)
@@ -687,6 +690,7 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         }
       );
 
+      invalidateRoomsCache();
       res.json({ message: 'Booking updated successfully' });
     }
   } catch (error) {
@@ -750,6 +754,7 @@ export const deleteBooking = async (req: AuthenticatedRequest, res: Response) =>
       }
     );
 
+    invalidateRoomsCache();
     res.json({ message: 'Booking deleted successfully' });
   } catch (error) {
     console.error('Error deleting booking:', error);

@@ -49,7 +49,9 @@ CREATE TABLE IF NOT EXISTS `booking` (
   CONSTRAINT `fk_booking_canceled_by` FOREIGN KEY (`canceled_by`) REFERENCES `user`(`id`)  ON DELETE SET NULL,
 
   KEY `ix_booking_room_time` (`room_id`, `start_time`, `end_time`),
-  KEY `ix_booking_creator_time` (`created_by`, `start_time`)
+  KEY `ix_booking_creator_time` (`created_by`, `start_time`),
+  KEY `ix_booking_status` (`status`),
+  KEY `ix_booking_status_dates` (`status`, `start_time`, `end_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create the activity_log table for audit trail
