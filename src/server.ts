@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import { dbReady } from './models/db';
 import roomRoutes from './routes/rooms.routes';
 import bookingRoutes from './routes/bookings.routes';
@@ -31,16 +30,6 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false,
 }));
-
-// Security: Global rate limiting
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per window
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(globalLimiter);
 
 // CORS configuration
 const corsOptions = {

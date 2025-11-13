@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { getAllRooms, createRoom, updateRoom, deleteRoom, getRoomById, getAvailableRooms } from '../controllers/rooms.controller';
 import { authenticate, authenticateOptional, requireAdmin } from '../middleware/auth.middleware';
+import { apiLimiter } from '../middleware/rate-limiter.middleware';
 
 const router = Router();
+
+// Apply the standard API limiter to all routes in this file
+router.use(apiLimiter);
 
 // Public routes (accessible to guests) - Use authenticateOptional for privacy anonymization
 router.get('/', authenticateOptional, getAllRooms);
