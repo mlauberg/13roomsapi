@@ -47,6 +47,21 @@ const normalizeRoomStatus = (status?: string | null): RoomStatus => {
 };
 
 /**
+ * Converts a Date object to timezone-naive YYYY-MM-DD HH:mm:ss string format.
+ * This ensures "What You See Is What You Get" - the exact string stored in the database
+ * is what the frontend receives, with no timezone conversions.
+ */
+const formatToNaiveString = (date: Date | null | undefined): string => {
+  if (!date) return '';
+  return date.getFullYear() + '-' +
+         String(date.getMonth() + 1).padStart(2, '0') + '-' +
+         String(date.getDate()).padStart(2, '0') + ' ' +
+         String(date.getHours()).padStart(2, '0') + ':' +
+         String(date.getMinutes()).padStart(2, '0') + ':' +
+         String(date.getSeconds()).padStart(2, '0');
+};
+
+/**
  * @route GET /api/rooms
  * @desc Get all rooms
  * @access Public (with optional authentication for privacy)
@@ -62,7 +77,18 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     }));
 
     const now = new Date();
-    console.log('Current server time:', now.toISOString());
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log('[BACKEND DIAGNOSTIC] Current server time (NOW):');
+    console.log('  ISO String:', now.toISOString());
+    console.log('  Local String:', now.toLocaleString());
+    console.log('  Timestamp (ms):', now.getTime());
+    console.log('  getFullYear():', now.getFullYear());
+    console.log('  getMonth():', now.getMonth() + 1);
+    console.log('  getDate():', now.getDate());
+    console.log('  getHours():', now.getHours());
+    console.log('  getMinutes():', now.getMinutes());
+    console.log('  getSeconds():', now.getSeconds());
+    console.log('═══════════════════════════════════════════════════════════════');
 
     // Format dates for MySQL (YYYY-MM-DD HH:MM:SS)
     const formatMySQLDateTime = (date: Date) => {
@@ -127,30 +153,59 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
     const roomsWithBookingInfo = rooms.map(room => {
       const roomBookings = allBookings.filter(booking => booking.room_id === room.id);
 
+      console.log(`\n[BACKEND - Room ${room.name}] Analyzing ${roomBookings.length} bookings...`);
+
       let currentBooking: Booking | undefined = undefined;
       let nextBooking: Booking | undefined = undefined;
 
       // Find current booking (ongoing right now)
+      console.log(`[BACKEND - Room ${room.name}] Looking for CURRENT booking...`);
+      console.log(`  NOW (for comparison):`, now.toISOString(), '| ms:', now.getTime());
+
       currentBooking = roomBookings.find(booking => {
+        console.log(`  Checking booking ID ${booking.id}:`);
+        console.log(`    DB start_time string:`, booking.start_time);
+        console.log(`    DB end_time string:`, booking.end_time);
+        console.log(`    start_time (Date):`, booking.start_time.toISOString(), '| ms:', booking.start_time.getTime());
+        console.log(`    end_time (Date):`, booking.end_time.toISOString(), '| ms:', booking.end_time.getTime());
+        console.log(`    start <= now?`, booking.start_time.getTime() <= now.getTime(), '(', booking.start_time.getTime(), '<=', now.getTime(), ')');
+        console.log(`    end > now?`, booking.end_time.getTime() > now.getTime(), '(', booking.end_time.getTime(), '>', now.getTime(), ')');
+
         const isCurrentlyBooked = booking.start_time <= now && booking.end_time > now;
+        console.log(`    → Is currently booked?`, isCurrentlyBooked);
+
         if (isCurrentlyBooked) {
-          console.log(`Room ${room.name} is currently booked:`, {
-            start: booking.start_time.toISOString(),
-            end: booking.end_time.toISOString(),
-            now: now.toISOString()
-          });
+          console.log(`    ✓ Room ${room.name} is currently booked (booking ID: ${booking.id})`);
         }
         return isCurrentlyBooked;
       });
 
+      if (currentBooking) {
+        console.log(`  → CURRENT booking found: ID ${currentBooking.id}`);
+      } else {
+        console.log(`  → NO current booking`);
+      }
+
       // Find next booking for today
+      console.log(`[BACKEND - Room ${room.name}] Looking for NEXT booking...`);
+
       const futureBookingsToday = roomBookings
-        .filter(booking => booking.start_time > now)
+        .filter(booking => {
+          const isFuture = booking.start_time > now;
+          console.log(`  Checking booking ID ${booking.id}:`);
+          console.log(`    start_time:`, booking.start_time.toISOString());
+          console.log(`    start_time > now?`, isFuture, '(', booking.start_time.getTime(), '>', now.getTime(), ')');
+          return isFuture;
+        })
         .sort((a, b) => a.start_time.getTime() - b.start_time.getTime());
+
+      console.log(`  Found ${futureBookingsToday.length} future bookings`);
 
       if (futureBookingsToday.length > 0) {
         nextBooking = futureBookingsToday[0];
-        console.log(`Room ${room.name} has next booking at:`, nextBooking.start_time.toISOString());
+        console.log(`  → NEXT booking found: ID ${nextBooking.id} at ${nextBooking.start_time.toISOString()}`);
+      } else {
+        console.log(`  → NO next booking`);
       }
 
       // Calculate total bookings and booked minutes for today
@@ -200,7 +255,39 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       }
     });
 
-    res.json(roomsWithBookingInfo);
+    // CRITICAL: Convert all Date objects to timezone-naive strings before sending to frontend
+    // This ensures "What You See Is What You Get" - no timezone conversions
+    const finalRooms = roomsWithBookingInfo.map(room => ({
+      ...room,
+      currentBooking: room.currentBooking
+        ? {
+            ...room.currentBooking,
+            start_time: formatToNaiveString(room.currentBooking.start_time) as any,
+            end_time: formatToNaiveString(room.currentBooking.end_time) as any
+          }
+        : null,
+      nextBooking: room.nextBooking
+        ? {
+            ...room.nextBooking,
+            start_time: formatToNaiveString(room.nextBooking.start_time) as any,
+            end_time: formatToNaiveString(room.nextBooking.end_time) as any
+          }
+        : null,
+      allBookingsToday: room.allBookingsToday?.map(booking => ({
+        ...booking,
+        start_time: formatToNaiveString(booking.start_time) as any,
+        end_time: formatToNaiveString(booking.end_time) as any
+      })) || []
+    }));
+
+    console.log('\n[TIMEZONE-NAIVE ENFORCEMENT] Sample output for verification:');
+    if (finalRooms.length > 0 && finalRooms[0].allBookingsToday && finalRooms[0].allBookingsToday.length > 0) {
+      console.log('  First booking start_time:', finalRooms[0].allBookingsToday[0].start_time);
+      console.log('  First booking end_time:', finalRooms[0].allBookingsToday[0].end_time);
+      console.log('  ✓ Format verified: YYYY-MM-DD HH:mm:ss (no timezone suffix)');
+    }
+
+    res.json(finalRooms);
   } catch (error) {
     console.error('Error fetching rooms with booking info:', error);
     res.status(500).json({ message: 'Server Error' });

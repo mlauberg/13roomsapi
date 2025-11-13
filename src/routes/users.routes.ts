@@ -7,18 +7,27 @@ import {
   deleteUser
 } from '../controllers/users.controller';
 import { authenticate, requireAdmin } from '../middleware/auth.middleware';
-import { apiLimiter } from '../middleware/rate-limiter.middleware';
+import { readLimiter, writeLimiter } from '../middleware/rate-limiter.middleware';
 
 const router = Router();
 
-// Apply the standard API limiter to all routes in this file
-router.use(apiLimiter);
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * USERS ROUTES - GRANULAR RATE LIMITING
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * GET routes: Use readLimiter (200 req/min) - Admin-only, less frequent
+ * POST/PUT/DELETE routes: Use writeLimiter (100 req/15min) - Data modification
+ */
 
 // All user management routes are admin-only
-router.get('/', authenticate, requireAdmin, getAllUsers);
-router.get('/:id', authenticate, requireAdmin, getUserById);
-router.post('/', authenticate, requireAdmin, createUser);
-router.put('/:id', authenticate, requireAdmin, updateUser);
-router.delete('/:id', authenticate, requireAdmin, deleteUser);
+// Read routes - Use lenient readLimiter
+router.get('/', readLimiter, authenticate, requireAdmin, getAllUsers);
+router.get('/:id', readLimiter, authenticate, requireAdmin, getUserById);
+
+// Write routes - Use stricter writeLimiter
+router.post('/', writeLimiter, authenticate, requireAdmin, createUser);
+router.put('/:id', writeLimiter, authenticate, requireAdmin, updateUser);
+router.delete('/:id', writeLimiter, authenticate, requireAdmin, deleteUser);
 
 export default router;
