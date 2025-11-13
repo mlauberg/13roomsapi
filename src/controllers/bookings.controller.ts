@@ -148,9 +148,7 @@ export const getBookingsByRoomId = async (req: AuthenticatedRequest, res: Respon
       const endOfDay = `${dateStr} 23:59:59`;
       query += ' AND booking.start_time >= ? AND booking.start_time <= ?';
       params.push(startOfDay, endOfDay);
-      console.log(`Fetching bookings for room ${roomId} on ${dateStr}`);
     } else {
-      console.log(`Fetching all bookings for room ${roomId}`);
     }
 
     query += ' ORDER BY booking.start_time ASC';
@@ -164,7 +162,6 @@ export const getBookingsByRoomId = async (req: AuthenticatedRequest, res: Respon
 
     if (isGuest) {
       // Guest user - anonymize booking details
-      console.log('[Privacy] Anonymizing booking data for guest user');
       processedBookings = rows.map((row: any) => ({
         ...row,
         title: 'Belegt',
@@ -190,7 +187,6 @@ export const getBookingsByRoomId = async (req: AuthenticatedRequest, res: Respon
       }));
     }
 
-    console.log(`Found ${processedBookings.length} bookings for room ${roomId}`);
     res.json(processedBookings);
   } catch (error) {
     console.error(`Error fetching bookings for room ${roomId}:`, error);
@@ -323,7 +319,6 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     // If any overlapping booking exists, reject the request
     if (existingBookings.length > 0) {
       const conflict = existingBookings[0];
-      console.log(`Booking conflict detected for room ${room_id}:`, conflict);
       return res.status(409).json({
         message: 'Dieser Zeitraum ist bereits gebucht.',
         conflict: {
@@ -363,7 +358,6 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
       ]
     );
 
-    console.log(`Booking created successfully for room ${room_id}: ${start_time_string} - ${end_time_string}`);
 
     // Log the activity
     await ActivityLogService.logActivity(
@@ -397,7 +391,6 @@ export const checkBookingConflict = async (req: AuthenticatedRequest, res: Respo
   const { roomId } = req.params;
   const { date, startTime, endTime } = req.query;
 
-  console.log(`Checking conflict for room ${roomId}: ${date} ${startTime}-${endTime}`);
 
   if (!date || !startTime || !endTime) {
     return res.status(400).json({ message: 'Date, startTime, and endTime are required' });
@@ -424,14 +417,12 @@ export const checkBookingConflict = async (req: AuthenticatedRequest, res: Respo
 
     if (rows.length > 0) {
       const conflict = rows[0];
-      console.log(`Conflict found for room ${roomId}:`, conflict);
 
       // PRIVACY: Check if user is authenticated
       const isGuest = !req.user;
 
       if (isGuest) {
         // Guest user - anonymize booking details
-        console.log('[Privacy] Anonymizing conflict data for guest user');
         res.json({
           id: conflict.id,
           room_id: conflict.room_id,
@@ -451,7 +442,6 @@ export const checkBookingConflict = async (req: AuthenticatedRequest, res: Respo
         });
       }
     } else {
-      console.log(`No conflict found for room ${roomId}`);
       // No conflict found
       res.json(null);
     }
@@ -507,7 +497,6 @@ export const getMyBookings = async (req: AuthenticatedRequest, res: Response) =>
       status: row.status
     }));
 
-    console.log(`Found ${bookings.length} bookings for user ${user.id}`);
     res.json(bookings);
   } catch (error) {
     console.error('Error fetching user bookings:', error);
@@ -589,7 +578,6 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       const startTimeStr: string = start_time_string!;
       const endTimeStr: string = end_time_string!;
 
-      console.log(`[Reschedule] Booking ${id}: Updating times from ${booking.start_time} - ${booking.end_time} to ${startTimeStr} - ${endTimeStr}`);
 
       // Validation: Parse datetime strings using timezone-naive parser
       const startDate = parseTimezoneNaiveDateString(startTimeStr);
@@ -621,7 +609,6 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       // If any overlapping booking exists, reject the request
       if (existingBookings.length > 0) {
         const conflict = existingBookings[0];
-        console.log(`[Reschedule] Conflict detected for booking ${id} in room ${targetRoomId}:`, conflict);
         return res.status(409).json({
           message: 'Dieser Zeitraum ist bereits gebucht.',
           conflict: {
@@ -643,7 +630,6 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         return res.status(404).json({ message: 'Booking not found' });
       }
 
-      console.log(`[Reschedule] Booking ${id} rescheduled successfully by user ${user.id}`);
 
       // Log the activity with old and new values
       await ActivityLogService.logActivity(
@@ -667,7 +653,6 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       res.json({ message: 'Booking rescheduled successfully' });
     } else {
       // SIMPLE UPDATE: Only update title and comment (legacy behavior)
-      console.log(`[Update] Booking ${id}: Updating title/comment only`);
 
       const [result] = await pool.query<any>(
         `UPDATE booking SET name = ?, comment = ? WHERE id = ?`,
@@ -678,7 +663,6 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
         return res.status(404).json({ message: 'Booking not found' });
       }
 
-      console.log(`[Update] Booking ${id} updated successfully by user ${user.id}`);
 
       // Log the activity
       await ActivityLogService.logActivity(

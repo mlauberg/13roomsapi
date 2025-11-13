@@ -15,7 +15,6 @@ export const getActivityLogs = async (req: AuthenticatedRequest, res: Response) 
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
     const offset = (page - 1) * limit;
 
-    console.log(`[ActivityLogs] Fetching logs - Page: ${page}, Limit: ${limit}, Offset: ${offset}`);
 
     // Fetch logs with user details (LEFT JOIN to handle null user_id)
     const [logs] = await pool.query<any[]>(
@@ -45,7 +44,6 @@ export const getActivityLogs = async (req: AuthenticatedRequest, res: Response) 
     const total = countResult[0]?.total ?? 0;
     const totalPages = Math.ceil(total / limit);
 
-    console.log(`[ActivityLogs] Returning ${logs.length} logs (Total: ${total}, Pages: ${totalPages})`);
 
     // Process logs: MySQL already parses JSON columns, so no need to call JSON.parse()
     const processedLogs = logs.map(log => ({

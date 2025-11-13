@@ -31,7 +31,6 @@ const ensureSchema = async () => {
     // Step 2: Read the init-db.sql file using ABSOLUTE path resolution
     // Navigate from src/models/db.ts up to the project root (13roomsAPI/)
     const sqlFilePath = path.join(__dirname, '..', '..', 'init-db.sql');
-    console.log(`Reading database schema from: ${sqlFilePath}`);
 
     const sqlScript = await fs.readFile(sqlFilePath, 'utf-8');
 
@@ -52,7 +51,6 @@ const ensureSchema = async () => {
       }
     }
 
-    console.log(`Database '${process.env.DB_NAME}' schema initialized from init-db.sql`);
   } catch (error) {
     console.error('Error ensuring database schema:', error);
     throw error;
@@ -77,7 +75,6 @@ const pool = mysql.createPool({
   dateStrings: true // CRITICAL: Return DATETIME/DATE as strings to prevent timezone conversion
 });
 
-console.log('MySQL connection pool created.');
 
 // Export a promise that resolves when schema initialization is complete
 export const dbReady = ensureSchema();
