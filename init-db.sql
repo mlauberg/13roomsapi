@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS `user` (
   `password_hash` VARCHAR(255) NOT NULL,               
   `role` ENUM('user','admin') NOT NULL DEFAULT 'user',   
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create the room table with correct syntax
@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS `room` (
   `location` VARCHAR(255) DEFAULT NULL,
   `amenities` JSON DEFAULT NULL,
   `icon` VARCHAR(100) DEFAULT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Create the booking table with correct syntax
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS `booking` (
   `canceled_by` INT DEFAULT NULL,
   `canceled_reason` VARCHAR(255) DEFAULT NULL,
   `canceled_at` DATETIME DEFAULT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
 
   CONSTRAINT `fk_booking_room`       FOREIGN KEY (`room_id`)    REFERENCES `room`(`id`)  ON DELETE CASCADE,
   CONSTRAINT `fk_booking_created_by` FOREIGN KEY (`created_by`) REFERENCES `user`(`id`)  ON DELETE SET NULL,  -- Changed to SET NULL to allow guests
@@ -85,12 +85,14 @@ CREATE TABLE IF NOT EXISTS `activity_log` (
 
 -- Use INSERT IGNORE to prevent errors if the user already exists.
 -- This makes the script safely re-runnable (idempotent).
-INSERT IGNORE INTO `user` (email, firstname, surname, password_hash, role, is_active)
+INSERT IGNORE INTO `user` (email, firstname, surname, password_hash, role, is_active, created_at, updated_at)
 VALUES (
   'admin@13rooms.com',
   'Admin',
   'User',
   '120000:765c7e19c85c2201b2eae6f318afb3c8:cf73c681f67d7f06361a393193c56f885f7d131545b0c9273a0a94c0a7c2c31c0c7001f4cedac2fb8cdcf3cb88ab84d8682303ca1f2ae49846e9965533cf58b4',
   'admin',
-  1
+  1,
+  NOW(),
+  NOW()
 );

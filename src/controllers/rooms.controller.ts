@@ -9,7 +9,7 @@ import {
   invalidateRoomsCache,
   updateRoomsCache
 } from '../services/cache.service';
-import { getCurrentNaiveDateTimeString, calculateSecondsBetweenNaive } from '../utils/date-utils';
+import { getCurrentNaiveDateTimeString, calculateSecondsBetweenNaive, getCurrentTimezoneNaiveTimestamp } from '../utils/date-utils';
 
 // Interface for Room data
 type RoomStatus = 'active' | 'maintenance' | 'inactive' | 'night_rest';
@@ -254,9 +254,10 @@ export const createRoom = async (req: AuthenticatedRequest, res: Response) => {
 
   try {
     const amenitiesJson = amenities ? JSON.stringify(amenities) : null;
+    const now = getCurrentTimezoneNaiveTimestamp();
     const [result] = await pool.query<any>(
-      'INSERT INTO room (name, capacity, status, location, amenities, icon) VALUES (?, ?, ?, ?, CAST(? AS JSON), ?)',
-      [name, capacity, normalizedStatus, location, amenitiesJson, icon]
+      'INSERT INTO room (name, capacity, status, location, amenities, icon, created_at, updated_at) VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?, ?)',
+      [name, capacity, normalizedStatus, location, amenitiesJson, icon, now, now]
     );
 
     // Log the activity
@@ -365,6 +366,11 @@ export const updateRoom = async (req: AuthenticatedRequest, res: Response) => {
   if (fieldsToUpdate.length === 0) {
     return res.status(400).json({ message: 'No fields provided for update' });
   }
+
+  // Add updated_at timestamp
+  const now = getCurrentTimezoneNaiveTimestamp();
+  fieldsToUpdate.push('updated_at = ?');
+  values.push(now);
 
   values.push(Number(id));
 

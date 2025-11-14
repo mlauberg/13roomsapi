@@ -4,7 +4,7 @@ import validator from 'validator';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
 import { invalidateRoomsCache } from '../services/cache.service';
-import { parseTimezoneNaiveDateString, calculateSecondsBetweenNaive } from '../utils/date-utils';
+import { parseTimezoneNaiveDateString, calculateSecondsBetweenNaive, getCurrentTimezoneNaiveTimestamp } from '../utils/date-utils';
 
 /**
  * Sanitizes user input to prevent XSS attacks.
@@ -334,6 +334,7 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
     }
 
     // No conflict - proceed with insertion using literal time strings
+    const now = getCurrentTimezoneNaiveTimestamp();
     const [result] = await pool.query<any>(
       `INSERT INTO booking (
         room_id,
@@ -345,8 +346,10 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
         status,
         canceled_by,
         canceled_reason,
-        canceled_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        canceled_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         room_id,
         bookingTitle,
@@ -358,6 +361,8 @@ export const createBooking = async (req: AuthenticatedRequest, res: Response) =>
         canceled_by ?? null,
         canceled_reason ?? null,
         canceled_at ?? null,
+        now,
+        now,
       ]
     );
 
@@ -627,9 +632,10 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       }
 
       // No conflict - proceed with full update using literal time strings
+      const updateNow = getCurrentTimezoneNaiveTimestamp();
       const [result] = await pool.query<any>(
-        `UPDATE booking SET room_id = ?, name = ?, start_time = ?, end_time = ?, comment = ? WHERE id = ?`,
-        [targetRoomId, sanitizedTitle, startTimeStr, endTimeStr, sanitizedComment, id]
+        `UPDATE booking SET room_id = ?, name = ?, start_time = ?, end_time = ?, comment = ?, updated_at = ? WHERE id = ?`,
+        [targetRoomId, sanitizedTitle, startTimeStr, endTimeStr, sanitizedComment, updateNow, id]
       );
 
       if (result.affectedRows === 0) {
@@ -659,10 +665,11 @@ export const updateBooking = async (req: AuthenticatedRequest, res: Response) =>
       res.json({ message: 'Booking rescheduled successfully' });
     } else {
       // SIMPLE UPDATE: Only update title and comment (legacy behavior)
+      const updateNow = getCurrentTimezoneNaiveTimestamp();
 
       const [result] = await pool.query<any>(
-        `UPDATE booking SET name = ?, comment = ? WHERE id = ?`,
-        [sanitizedTitle, sanitizedComment, id]
+        `UPDATE booking SET name = ?, comment = ?, updated_at = ? WHERE id = ?`,
+        [sanitizedTitle, sanitizedComment, updateNow, id]
       );
 
       if (result.affectedRows === 0) {

@@ -3,6 +3,7 @@ import pool from '../models/db';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { generateToken } from '../utils/token';
 import { ActivityLogService } from '../services/activity-log.service';
+import { getCurrentTimezoneNaiveTimestamp } from '../utils/date-utils';
 
 const sanitizeEmail = (email: string): string => email.trim().toLowerCase();
 
@@ -34,10 +35,11 @@ export const register = async (req: Request, res: Response) => {
       return res.status(409).json({ message: 'An account with this email already exists.' });
     }
 
+    const now = getCurrentTimezoneNaiveTimestamp();
     const [result] = await pool.query<any>(
-      `INSERT INTO \`user\` (email, firstname, surname, password_hash, role, is_active)
-       VALUES (?, ?, ?, ?, ?, 1)`,
-      [normalizedEmail, firstname.trim(), surname.trim(), passwordHash, normalizedRole]
+      `INSERT INTO \`user\` (email, firstname, surname, password_hash, role, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+      [normalizedEmail, firstname.trim(), surname.trim(), passwordHash, normalizedRole, now, now]
     );
 
     const userId = result.insertId;

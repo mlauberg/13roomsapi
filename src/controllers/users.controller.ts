@@ -3,6 +3,7 @@ import pool from '../models/db';
 import { hashPassword } from '../utils/password';
 import { AuthenticatedRequest } from '../middleware/auth.middleware';
 import { ActivityLogService } from '../services/activity-log.service';
+import { getCurrentTimezoneNaiveTimestamp } from '../utils/date-utils';
 
 const sanitizeEmail = (email: string): string => email.trim().toLowerCase();
 
@@ -97,10 +98,11 @@ export const createUser = async (req: AuthenticatedRequest, res: Response) => {
     }
 
     // Create user
+    const now = getCurrentTimezoneNaiveTimestamp();
     const [result] = await pool.query<any>(
-      `INSERT INTO \`user\` (email, firstname, surname, password_hash, role, is_active)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [normalizedEmail, firstname.trim(), surname.trim(), passwordHash, normalizedRole, activeStatus]
+      `INSERT INTO \`user\` (email, firstname, surname, password_hash, role, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [normalizedEmail, firstname.trim(), surname.trim(), passwordHash, normalizedRole, activeStatus, now, now]
     );
 
     const userId = result.insertId;
@@ -215,6 +217,11 @@ export const updateUser = async (req: AuthenticatedRequest, res: Response) => {
     if (updates.length === 0) {
       return res.status(400).json({ message: 'No valid fields to update.' });
     }
+
+    // Add updated_at timestamp
+    const now = getCurrentTimezoneNaiveTimestamp();
+    updates.push('updated_at = ?');
+    values.push(now);
 
     values.push(id);
 
