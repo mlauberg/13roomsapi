@@ -1,3 +1,14 @@
+// Defines the structure of a booking object, using string types for datetimes
+// to ensure timezone-naive handling throughout the application.
+interface Booking {
+  id: number;
+  room_id: number;
+  title: string;
+  start_time: string;
+  end_time: string;
+  comment: string | null;
+}
+
 // It is okay to define the interface here for this fix.
 interface RoomWithBookingInfo {
   id: number;
@@ -7,9 +18,9 @@ interface RoomWithBookingInfo {
   location: string | null;
   amenities: string[] | null;
   icon: string | null;
-  currentBooking: any | null;
-  nextBooking: any | null;
-  allBookingsToday: any[];
+  currentBooking: Booking | null;
+  nextBooking: Booking | null;
+  allBookingsToday: Booking[];
 }
 
 export let cachedRoomsData: RoomWithBookingInfo[] | null = null;

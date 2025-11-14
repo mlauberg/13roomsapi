@@ -140,13 +140,33 @@ The server will run on `http://localhost:3000`.
 
 All API endpoints are prefixed with `/api`.
 
-### Rooms
--   `GET /api/rooms`: Get all rooms.
--   `POST /api/rooms`: Create a new room.
--   `PUT /api/rooms/:id`: Update a room by ID.
--   `DELETE /api/rooms/:id`: Delete a room by ID.
+### Auth (`/api/auth`)
+-   `POST /register`: Register a new user.
+-   `POST /login`: Log in a user and receive a JWT.
 
-### Bookings
--   `GET /api/bookings`: Get all bookings.
--   `POST /api/bookings`: Create a new booking.
--   `DELETE /api/bookings/:id`: Delete a booking by ID.
+### Rooms (`/api/rooms`)
+-   `GET /`: Get all rooms with their current booking status.
+-   `GET /available`: Get rooms available for a specific time slot.
+-   `GET /:id`: Get a single room by ID.
+-   `POST /`: (Admin) Create a new room.
+-   `PUT /:id`: (Admin) Update a room by ID.
+-   `DELETE /:id`: (Admin) Delete a room by ID.
+
+### Bookings (`/api/bookings`)
+-   `GET /`: (Admin) Get all bookings.
+-   `GET /my-bookings`: (User) Get all bookings for the authenticated user.
+-   `GET /check-conflict/:roomId`: Check if a time slot for a room has a conflict.
+-   `GET /room/:roomId`: Get all bookings for a specific room.
+-   `POST /`: Create a new booking (for authenticated users or guests).
+-   `PUT /:id`: (User/Admin) Update a booking by ID.
+-   `DELETE /:id`: (User/Admin) Delete a booking by ID.
+
+### Users (`/api/users`)
+-   `GET /`: (Admin) Get all users.
+-   `GET /:id`: (Admin) Get a single user by ID.
+-   `POST /`: (Admin) Create a new user.
+-   `PUT /:id`: (Admin) Update a user by ID.
+--   `DELETE /:id`: (Admin) Delete a user by ID.
+
+### Logs (`/api/logs`)
+-   `GET /`: (Admin) Get activity logs with pagination.
