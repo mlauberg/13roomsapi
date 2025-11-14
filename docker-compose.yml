@@ -61,6 +61,8 @@ services:
       JWT_SECRET: 3cd5a2a57c731b76f94a458901dc38129fd5fe76429834fac042cafb93f1b508
       # Flag to prevent loading local .env file inside container
       NODE_ENV: docker
+      # Container timezone - synchronizes server time with Europe/Berlin (CRITICAL FIX)
+      TZ: 'Europe/Berlin'
     depends_on:
       database:
         condition: service_healthy
