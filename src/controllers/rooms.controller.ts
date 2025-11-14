@@ -176,13 +176,25 @@ export const getAllRooms = async (req: AuthenticatedRequest, res: Response) => {
       }
 
       return {
-        ...room,
-        status: finalStatus,
+        // Explicitly map every single property from the RoomWithBookingInfo interface
+        id: room.id,
+        name: room.name,
+        capacity: room.capacity,
+        status: finalStatus, // Use the calculated status
+
+        // CRITICAL FIX: Ensure all nullable fields default to `null`, never `undefined`.
+        location: room.location ?? null,
+        amenities: room.amenities ?? null,
+        icon: room.icon ?? null,
+
+        // Pass through the calculated booking info
         currentBooking: currentBooking || null,
         nextBooking: nextBooking || null,
-        totalBookingsToday,
-        totalBookedMinutesToday,
         allBookingsToday: sortedRoomBookings,
+
+        // Pass through the calculated stats
+        totalBookingsToday: totalBookingsToday,
+        totalBookedMinutesToday: totalBookedMinutesToday,
       };
     });
 
