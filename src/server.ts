@@ -8,6 +8,7 @@ import bookingRoutes from './routes/bookings.routes';
 import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
 import logsRoutes from './routes/logs.routes';
+import debugRoutes from './routes/debug.routes';
 
 // Load .env file only if not running in a Docker environment
 // In Docker, environment variables are injected via docker-compose.yml
@@ -49,6 +50,12 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/logs', logsRoutes);
+
+// Debug routes (only enabled in non-production environments)
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/debug', debugRoutes);
+  console.log('[DEBUG] Seeding endpoint /api/debug/seed is enabled.');
+}
 
 // Basic route for testing server status
 app.get('/', (req, res) => {
