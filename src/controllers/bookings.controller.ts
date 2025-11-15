@@ -42,8 +42,8 @@ const validateAndSanitizeTitle = (title: string | undefined | null): string => {
  */
 const validateAndSanitizeComment = (comment: string | undefined | null): string | null => {
   const sanitized = sanitizeInput(comment);
-  if (sanitized && sanitized.length > 1000) {
-    throw new Error('Der Kommentar darf maximal 1000 Zeichen lang sein.');
+  if (sanitized && sanitized.length > 2500) {
+    throw new Error('Der Kommentar darf maximal 2500 Zeichen lang sein.');
   }
   return sanitized;
 };
