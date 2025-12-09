@@ -22,7 +22,8 @@ interface Room {
   location?: string | null;
   amenities?: string[] | null;
   icon?: string | null;
-  nextAvailableTime?: Date | null;
+  // TIME ARCHITECTURE: nextAvailableTime is a timezone-naive datetime string
+  nextAvailableTime?: string | null;
   remainingTimeMinutes?: number | null;
   totalBookingsToday?: number;
   totalBookedMinutesToday?: number;
@@ -33,8 +34,9 @@ interface Booking {
   id: number;
   room_id: number;
   title: string;
-  start_time: Date;
-  end_time: Date;
+  // TIME ARCHITECTURE: All datetime fields are timezone-naive strings ("YYYY-MM-DD HH:mm:ss")
+  start_time: string;
+  end_time: string;
   comment: string | null;
 }
 
